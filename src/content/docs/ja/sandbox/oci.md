@@ -37,7 +37,7 @@ mikan --sandbox=oci:mikan-sandbox:latest /path/to/workspace
 
 ## コンテナエンジン
 
-mikan は docker のコマンド体系でコンテナを操作します。nerdctl（containerd）、Podman、Docker はいずれもこれを受け付けます。エンジンを選ぶ必要はありません。`container:*` または `oci:*` では、mikan は `nerdctl`、`podman`、`docker` の順に `info` が成功した最初のものを使い、起動時に記録します。このページのコマンドの `docker` はそのエンジンに読み替えてください。コンテナは作成したエンジンに属するため、後から別のエンジンが起動する host（ログイン時に Podman machine を起動するなど）では新しいコンテナが作られ、元のエンジンのコンテナは残ります。固定したい場合は `~/.mikan/mikan.env` に `CONTAINER_ENGINE` を設定してください。rootless Podman は、host が cgroup の CPU と memory controller をユーザーに委譲している場合に動作します（macOS の Podman machine は委譲済みです）。
+mikan は docker のコマンド体系でコンテナを操作します。nerdctl（containerd）、Podman、Docker はいずれもこれを受け付けます。エンジンを選ぶ必要はありません。mikan は `nerdctl`、`podman`、`docker` の順に `info` が成功した最初のものを使い、起動時に記録します。このページのコマンドの `docker` はそのエンジンに読み替えてください。コンテナは作成したエンジンに属するため、後から別のエンジンが起動する host（ログイン時に Podman machine を起動するなど）では新しいコンテナが作られ、元のエンジンのコンテナは残ります。固定したい場合は `~/.mikan/mikan.env` に `CONTAINER_ENGINE` を設定してください。rootless Podman は、host が cgroup の CPU と memory controller をユーザーに委譲している場合に動作します（macOS の Podman machine は委譲済みです）。
 
 macOS ではどのエンジンも VM 上で Linux を動かすため、bind mount は VM が共有するフォルダからしかコンテナに届きません。workspace と `~/.mikan` はホームディレクトリ配下に置いてください。
 

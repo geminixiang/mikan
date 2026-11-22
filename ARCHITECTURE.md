@@ -152,7 +152,7 @@ Execution authority is resolved for every agent environment rather than inferred
 1. Workspace projection resolves the office's visibility into both runtime mounts and authorized prompt sources.
 2. The harness-owned execution resolver combines actor identity, office, sandbox configuration, that projection, and vault routing exactly once for the run.
 3. Vault resolution returns only the credential environment and files authorized for that actor and execution mode.
-4. Sandbox capability checks report when the selected backend cannot enforce a private office's visibility; only `oci:*` enforces it, and the other backends are operator-selected trusted modes.
+4. The office's container receives only the mounts of its projection, which enforces a private office's visibility.
 5. The resulting execution decision carries the execution environment, runtime path context, and projection to the runner; that environment was created from the same final non-overlapping mounts and credential grant.
 
 For every provider call, prompt authorization and filesystem authorization consume the same execution decision. Runner construction uses a bootstrap prompt to initialize the harness, but replaces it from the actor-specific decision before the model can see it. This prevents host-side memory or skills from bypassing an isolated filesystem view.
@@ -227,9 +227,7 @@ This ordering prevents disk settings and the behavior of an apparently current r
 
 ### Execution isolation
 
-A managed office-runtime backend gives each Conversation office an independent runtime. Office visibility never changes this runtime separation.
-
-Not every supported execution mode provides this property: host execution and explicitly shared containers are operator-selected trusted modes. Backend capability checks, not backend names alone, decide whether a private office's visibility is enforced; unenforced private offices are served with a logged warning.
+The OCI sandbox gives each Conversation office an independent runtime. Office visibility never changes this runtime separation.
 
 ### Data isolation
 
@@ -339,7 +337,7 @@ Evidence: `src/settings/index.ts`, `src/file-guards.ts`, `src/office/index.ts`, 
 
 <a id="inv-execution-policy-enforcement"></a>
 
-**`execution-policy-enforcement`** — Only `oci:*` enforces office visibility (read-only global knowledge, no reach into other private offices). Host, shared-container, and remote backends are operator-selected trusted modes: a private office there is served with a one-time logged warning per office rather than a wider projection being silently presented as enforced.
+**`execution-policy-enforcement`** — The OCI sandbox enforces office visibility (read-only global knowledge, no reach into other private offices) by mounting only the office's projection into its container.
 
 Evidence: `src/harness/execution-resolver.ts`, `src/sandbox/registry.ts`.
 
@@ -347,9 +345,9 @@ Evidence: `src/harness/execution-resolver.ts`, `src/sandbox/registry.ts`.
 
 <a id="inv-credential-least-authority"></a>
 
-**`credential-least-authority`** — Credential access derives from actor, office, trigger trust, and sandbox capabilities. Open-trigger conversations receive no ambient shared vault, and credential mounts cannot shadow workspace mounts.
+**`credential-least-authority`** — Credential access derives from actor, office, and trigger trust. Open-trigger conversations receive no ambient shared vault, and credential mounts cannot shadow workspace mounts.
 
-Evidence: `src/harness/execution-resolver.ts`, `src/sandbox/identity.ts`, `src/vault/`.
+Evidence: `src/harness/execution-resolver.ts`, `src/vault/`.
 
 ### INV MCP conversation authority
 

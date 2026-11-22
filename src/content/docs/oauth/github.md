@@ -40,12 +40,6 @@ If `LINK_PORT` is not set, mikan listens on `8181` by default when `LINK_URL` ex
 ## 3. Start mikan
 
 ```bash
-mikan --sandbox=container:mikan-tools /path/to/workspace
-```
-
-Or use a managed per-user container:
-
-```bash
 mikan --sandbox=oci:mikan-sandbox:tools /path/to/workspace
 ```
 
@@ -72,7 +66,7 @@ GITHUB_OAUTH_ACCESS_TOKEN
 GH_TOKEN
 ```
 
-Every sandbox mode except `host` injects these env vars into later tool runs.
+mikan injects these env vars into later tool runs.
 
 These are the credentials of the person who logged in, and they are meant to reach the sandbox — the agent runs `gh` and `git` as that person. Note that this is separate from mikan's own GitHub App identity used by the [GitHub adapter](/platform-adapters/github/), whose tokens stay host-side and never enter a runtime.
 

@@ -48,12 +48,12 @@ describe("mikan migrate", () => {
   });
 
   test.each([
-    ["--sandbox", "host", "--state-dir", "/tmp/state"],
-    ["--sandbox", "host", "extra"],
-    ["--sandbox", "host", "--workspace"],
-    ["--sandbox", "host", "--owner", "C123"],
-    ["--sandbox", "host", "--owner", "C123=matrix"],
-    [],
+    ["--state-dir", "/tmp/state"],
+    ["extra"],
+    ["--workspace"],
+    ["--sandbox"],
+    ["--owner", "C123"],
+    ["--owner", "C123=matrix"],
   ])("rejects invalid arguments: %j", async (...args) => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     expect(await runMigrateCommand(args, missingDocker)).toBe(1);
@@ -72,6 +72,20 @@ describe("mikan migrate", () => {
     expect(output).toHaveBeenLastCalledWith("No pending migrations.");
   });
 
+  test("runs without --sandbox and ignores one an older command still passes", async () => {
+    const { stateDir, workspace } = legacyInstall(tempRoot());
+    const output = vi.spyOn(console, "log").mockImplementation(() => {});
+
+    expect(await runMigrateCommand(["--workspace", workspace], missingDocker)).toBe(0);
+    expect(output).toHaveBeenCalledWith(`Applied ${MIGRATIONS.length}.`);
+    expect(pendingMigrations(stateDir)).toEqual([]);
+
+    expect(
+      await runMigrateCommand(["--workspace", workspace, "--sandbox", "host"], missingDocker),
+    ).toBe(0);
+    expect(output).toHaveBeenLastCalledWith("No pending migrations.");
+  });
+
   test("copies Pi's models.json into the chosen state directory", async () => {
     const root = tempRoot();
     const { stateDir, workspace } = legacyInstall(root);
@@ -81,8 +95,7 @@ describe("mikan migrate", () => {
     vi.stubEnv("PI_CODING_AGENT_DIR", piAgentDir);
     vi.spyOn(console, "log").mockImplementation(() => {});
 
-    const args = ["--workspace", workspace];
-    expect(await runMigrateCommand([...args, "--sandbox", "host"], missingDocker)).toBe(0);
+    expect(await runMigrateCommand(["--workspace", workspace], missingDocker)).toBe(0);
 
     expect(readFileSync(join(stateDir, "models.json"), "utf-8")).toBe('{"providers":{}}');
   });
@@ -94,10 +107,7 @@ describe("mikan migrate", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const code = await runMigrateCommand(
-      ["--workspace", workspace, "--sandbox", "host"],
-      missingDocker,
-    );
+    const code = await runMigrateCommand(["--workspace", workspace], missingDocker);
 
     expect(code).toBe(1);
     expect(errors).toHaveBeenCalledWith(expect.stringContaining("123456"));
@@ -114,10 +124,7 @@ describe("mikan migrate", () => {
       vi.spyOn(console, "log").mockImplementation(() => {});
       const errors = vi.spyOn(console, "error").mockImplementation(() => {});
 
-      const code = await runMigrateCommand(
-        ["--workspace", workspace, "--sandbox", "host", ...extra],
-        missingDocker,
-      );
+      const code = await runMigrateCommand(["--workspace", workspace, ...extra], missingDocker);
 
       expect(code).toBe(1);
       expect(errors).toHaveBeenCalledWith(expect.stringContaining(join(stateDir, "settings.json")));
@@ -131,7 +138,7 @@ describe("mikan migrate", () => {
     vi.spyOn(console, "log").mockImplementation(() => {});
     const errors = vi.spyOn(console, "error").mockImplementation(() => {});
 
-    const code = await runMigrateCommand(["--sandbox", "host"], missingDocker);
+    const code = await runMigrateCommand([], missingDocker);
 
     expect(code).toBe(1);
     expect(errors).toHaveBeenCalledWith(expect.stringContaining(join(stateDir, "workspace")));

@@ -14,7 +14,6 @@ import {
 } from "node:fs";
 import type { Dirent } from "node:fs";
 import { resolve } from "node:path";
-import * as log from "./log.js";
 import { randomBytes } from "node:crypto";
 import { basename, dirname, join } from "node:path";
 import { errorMessage } from "./unknown-values.js";
@@ -208,19 +207,11 @@ function isPathInside(child: string, parent: string): boolean {
   return childPath === parentPath || childPath.startsWith(parentPath + "/");
 }
 
-export function assertStateDirOutsideWorkspace(
-  stateDir: string,
-  workingDir: string,
-  sandboxType: string,
-): void {
+export function assertStateDirOutsideWorkspace(stateDir: string, workingDir: string): void {
   if (!isPathInside(stateDir, workingDir)) return;
-  const message =
+  throw new Error(
     `The state directory (${stateDir}) must not be inside the working directory (${workingDir}): ` +
-    `sandbox containers mount the working directory, and a mounted state dir ` +
-    `would expose settings, office records, vaults, and credentials to sandboxed code.`;
-  if (sandboxType === "host") {
-    log.logWarning("Insecure state dir location", message);
-    return;
-  }
-  throw new Error(message);
+      `sandbox containers mount the working directory, and a mounted state dir ` +
+      `would expose settings, office records, vaults, and credentials to sandboxed code.`,
+  );
 }

@@ -3,23 +3,18 @@ import { posix } from "node:path";
 import { loadGlobalSettings } from "../settings/index.js";
 import { DockerContainerManager } from "../sandbox/provisioner.js";
 import type { ContainerMount, ActorContext, ExecutionPlan } from "../types.js";
-import {
-  createSandboxEnv,
-  getSandboxCredentialCapabilities,
-  getSandboxPathContext,
-} from "../sandbox/registry.js";
-import type { SandboxConfig } from "../sandbox/types.js";
+import { createContainerExecutionEnv } from "../sandbox/container.js";
+import { getSandboxPathContext } from "../sandbox/registry.js";
 import { reportUserFacingError } from "../observability/index.js";
 import { normalizeSharedVaultName } from "../vault/index.js";
 import type { VaultManager } from "../vault/types.js";
 import { allowsAmbientDefaultSharedVault, resolveVaultInjection } from "../vault/index.js";
-import { credentialAuthorizationKey, runtimeResourceKey } from "../sandbox/identity.js";
+import { officeKey } from "../office/index.js";
 import { resolveWorkspaceProjection } from "../office/projection.js";
 import type { WorkspaceProjection, Workspace } from "../office/types.js";
 
 export class ActorExecutionResolver {
   constructor(
-    private baseConfig: SandboxConfig,
     private vaultManager: Pick<VaultManager, "hasEntry" | "resolve" | "copySharedVaultTo">,
     private provisioner: Pick<DockerContainerManager, "provision" | "markUsed"> | undefined,
     private workspace: Workspace,
@@ -27,19 +22,20 @@ export class ActorExecutionResolver {
 
   async resolve(context: ActorContext) {
     const { plan, projection } = this.resolvePlan(context);
-    const pathContext = getSandboxPathContext(plan.sandboxConfig, this.workspace.root);
-    const env = createSandboxEnv(plan.sandboxConfig, {
+    const pathContext = getSandboxPathContext(this.workspace.root);
+    const env = createContainerExecutionEnv({
+      container: plan.container,
       cwd: pathContext.runtimeWorkspaceRoot,
       env: plan.env,
       ensureReady: this.buildEnsureReadyCallback(plan, context.address.conversationId),
       markUsed: () => this.provisioner?.markUsed(plan.resourceKey),
     });
-    return { env, sandboxConfig: plan.sandboxConfig, pathContext, projection };
+    return { env, pathContext, projection };
   }
 
   async prepare(context: ActorContext): Promise<string> {
     const { plan } = this.resolvePlan(context);
-    await this.buildEnsureReadyCallback(plan, context.address.conversationId)?.();
+    await this.buildEnsureReadyCallback(plan, context.address.conversationId)();
     return plan.resourceKey;
   }
 
@@ -47,30 +43,20 @@ export class ActorExecutionResolver {
     plan: ExecutionPlan;
     projection: WorkspaceProjection;
   } {
-    const scope = { userId: context.userId, address: context.address };
-    const credentialKey = credentialAuthorizationKey(this.baseConfig, scope);
-    const resourceKey = runtimeResourceKey(this.baseConfig, {
-      userId: context.userId,
-      address: context.address,
-    });
+    const credentialKey = officeKey(context.address);
+    const resourceKey = credentialKey;
     this.ensureDefaultSharedVault(credentialKey, context.trustModel);
 
     const vault = this.vaultManager.resolve(credentialKey);
-    const capabilities = getSandboxCredentialCapabilities(this.baseConfig.type);
     const office = this.workspace.office(context.address);
     const projection = resolveWorkspaceProjection(office);
-    const injection = resolveVaultInjection({
-      vault,
-      capabilities,
-      sandboxType: this.baseConfig.type,
-      address: office.address,
-    });
+    const injection = resolveVaultInjection(vault, office.address);
     const mounts = this.resolveMounts(injection.mounts, projection);
     return {
       plan: {
         credentialKey,
         resourceKey,
-        sandboxConfig: this.resolveSandboxConfig(resourceKey),
+        container: DockerContainerManager.containerName(resourceKey),
         env: injection.env,
         mounts,
       },
@@ -82,7 +68,7 @@ export class ActorExecutionResolver {
     credentialKey: string,
     trustModel: ActorContext["trustModel"],
   ): void {
-    if (!allowsAmbientDefaultSharedVault({ trustModel, sandboxType: this.baseConfig.type })) return;
+    if (!allowsAmbientDefaultSharedVault(trustModel)) return;
     if (this.vaultManager.hasEntry(credentialKey)) return;
 
     let profile: string | undefined;
@@ -95,22 +81,10 @@ export class ActorExecutionResolver {
     this.vaultManager.copySharedVaultTo(profile, credentialKey);
   }
 
-  private resolveSandboxConfig(resourceKey: string): SandboxConfig {
-    if (this.baseConfig.type !== "oci") return this.baseConfig;
-    return {
-      type: "container",
-      container: DockerContainerManager.containerName(resourceKey),
-    };
-  }
-
   private buildEnsureReadyCallback(
     plan: ExecutionPlan,
     conversationId: string,
-  ): (() => Promise<void>) | undefined {
-    if (this.baseConfig.type !== "oci" || plan.sandboxConfig.type !== "container") {
-      return undefined;
-    }
-
+  ): () => Promise<void> {
     return async () => {
       try {
         await this.provisioner?.provision(plan.resourceKey, {
@@ -128,7 +102,7 @@ export class ActorExecutionResolver {
             conversationId,
             credentialKey: plan.credentialKey,
             resourceKey: plan.resourceKey,
-            expectedContainer: DockerContainerManager.containerName(plan.resourceKey),
+            expectedContainer: plan.container,
             hasVault: Boolean(plan.env || plan.mounts.length > 0),
           },
         });

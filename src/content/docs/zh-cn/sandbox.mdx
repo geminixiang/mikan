@@ -2,17 +2,11 @@
 title: Sandbox
 ---
 
-import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
+import { Aside, LinkCard } from "@astrojs/starlight/components";
 
-<CardGrid>
-  <Card title="本地开发" icon="setting">
-    `host` 最少设置、不注入 vault env。所有办公室共用同一个文件系统，无法强制 private office 的
-    visibility，属于受信任部署。
-  </Card>
-  <Card title="主线隔离" icon="rocket">
-    `oci:<image>` 由 mikan 管理 lifecycle、workspace mount、vault env 与资源限制。
-  </Card>
-</CardGrid>
+mikan 只有一种 sandbox：`oci`。mikan 为每个对话办公室创建并管理一个容器，并提供该办公室的 workspace mount、vault 的环境变量与文件，以及资源限制。`--sandbox=oci` 使用为当前安装的 mikan 版本发布的镜像，`--sandbox=oci:<image>` 使用其他镜像；不带 `--sandbox` 时，mikan 使用 `oci`。主机上必须有可用的容器引擎（nerdctl、Podman 或 Docker）。
+
+一个对话对应一个 vault 和一个容器。vault 以 office key 命名：office key 就是带版本的 `v1-<platform>-<readable-id>-<hash>` 路径段，它同时也命名该对话在 workspace 下的目录。参阅[对话办公室](#对话办公室)。
 
 <Aside type="note" title="sandbox 的定位">
   `oci:*` 面向共用一台 VM 的团队。每个 office 有自己的资源限制、文件系统隔离与独立环境。它不是 E2B
@@ -21,18 +15,9 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 </Aside>
 
 <Aside type="caution" title="模式名称">
-  `docker:*` 不是可用模式；请改用 `container:*` 或 `oci:*`。
+  `host`、`container:<name>` 和 `docker:*` 不是 sandbox 模式，mikan 会在启动时拒绝它们。请使用 `oci`
+  或 `oci:<image>`。
 </Aside>
-
-## 支持模式
-
-| 模式               | 执行位置              | Vault env injection | Vault key             | 备注                                                           |
-| ------------------ | --------------------- | ------------------- | --------------------- | -------------------------------------------------------------- |
-| `host`             | 宿主机                | 不注入              | 由平台用户派生        | 仅限本地开发；无法强制 office visibility                       |
-| `container:<name>` | 现有 Docker container | 注入                | 由 container 名称派生 | one container one vault；多人共享同一 container 就共享该 vault |
-| `oci:<image>`      | mikan 管理的 OCI 容器 | 注入                | office key            | 当前最推荐的隔离模式；`1 conversation = 1 vault = 1 container` |
-
-office key 就是带版本的 `v1-<platform>-<readable-id>-<hash>` 路径段，它同时也命名该对话在 workspace 下的目录。参阅[对话办公室](#对话办公室)。
 
 ## 对话办公室
 
@@ -46,48 +31,18 @@ runtime 能看到 workspace 的哪些部分，跟随该办公室的 **visibility
 | `MEMORY.md`、`skills/`——共享知识           | 可读写        | 只读           |
 | `public/<office-key>/`——所有 public office | 只读          | 只读           |
 
-没有任何布局会挂载 workspace 根目录。admin portal 可把公开频道收窄为 private；不能放宽超过 Slack 的设置。只有 `oci:*` 会强制执行 visibility；其他模式报告 `managedProjection: false`，private office 在这些模式下会照常服务并记录一次警告。字段语义与已退役的门禁策略设置见[配置](/zh-cn/configuration/)。
+没有任何布局会挂载 workspace 根目录。admin portal 可把公开频道收窄为 private；不能放宽超过 Slack 的设置。字段语义与已退役的门禁策略设置见[配置](/zh-cn/configuration/)。
 
 <Aside type="caution" title="visibility 不是额外的 sandbox">
-  Visibility 决定哪些主机目录被投影进 runtime。它不是执行边界：无论办公室的 visibility 为何，`host`
-  模式都直接在宿主机上运行工具，没有任何文件系统或进程隔离。
+  Visibility 决定哪些主机目录被投影进 runtime。它不改变执行隔离：无论办公室的 visibility
+  为何，每个办公室都在自己的容器中运行。
 </Aside>
 
 ### 从原始 id 布局升级
 
 0.5.3 的工作区以原始对话 id 命名目录。`mikan migrate` 会把它们连同 vault、设置、会话和事件一起移到办公室布局；详见[从 0.5.3 升级](/zh-cn/deployment/#从-053-升级)。
 
-## 各模式文档
+## 相关页面
 
-<LinkCard title="Host sandbox" description="直接在宿主机执行工具；最适合本地开发。" href="host/" />
-<LinkCard
-  title="Container sandbox"
-  description="连到现有 Docker container，沿用使用者管理的 lifecycle。"
-  href="container/"
-/>
-<LinkCard
-  title="OCI sandbox"
-  description="由 mikan 管理 per-conversation container 与资源限制。"
-  href="image/"
-/>
-<LinkCard />
-<LinkCard />
-
-## 能力差异
-
-`oci:<image>` <Badge text="推荐" variant="success" /> 是当前主要开发与推荐的 sandbox 模式；其他模式保留为本地开发、兼容、或实验用途，部分能力不会补齐。
-
-| ------------------------------------ | -------- | ------------------ | --------------- | ------------------ | --------------- | -------------- |
-| command 执行 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| mikan 管理 runtime lifecycle | 不适用 | ❌ | ✅ | ✅ mikan 进程托管 | ❌ | ❌ |
-| per-conversation container / runtime | ❌ | ❌ | ✅ | ✅ | 需自行管理 | bridge 衍生 id |
-| per-conversation vault env | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
-| vault file 自动投影 / bind mount | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| workspace 自动挂载 | host | 需自行挂载 | ✅ | ✅ | 需自行挂载 | ❌ |
-| 强制执行 office visibility | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| idle auto-stop / recreate | 不适用 | ❌ | ✅ | ✅ | ❌ | ❌ |
-| CPU / memory default limits | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| agent `sandbox` tool 设置 limits | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| 推荐程度 | 本地开发 | legacy / 兼容 | 主线 | preview | alpha | 建设中 |
-
-上表中大多数 ❌ 都是拒绝，而非静默降级。例外是 office visibility：无法强制执行的模式会针对每个办公室记录一次 `Sandbox '<type>' cannot enforce private office visibility` 并继续，因为这些模式本身就是受信任部署。无法 mount vault file 的模式会抛出 `Sandbox type "<type>" does not support vault file mounts`，而不是在缺少凭证的情况下运行。在无法投影文件的模式上，请只用 `env` 保存 vault 凭证。
+<LinkCard title="OCI sandbox" description="镜像、容器引擎、升级与资源限制。" href="oci/" />
+<LinkCard title="Vault" description="凭证如何存储，以及如何进入 sandbox。" href="vault/" />

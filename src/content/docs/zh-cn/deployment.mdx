@@ -23,7 +23,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 - Node.js `>=24.15.0`
 - 至少一套完整的 Slack、Telegram、Discord 或 GitHub 凭证
 - PM2 用户持久存在的 `~/.mikan`，mikan 的状态都存放在这里；工作目录默认为 `~/.mikan/workspace`
-- 使用 `oci:*` 或 `container:*` 时，PM2 用户可以使用的容器引擎：nerdctl、Podman 或 Docker，mikan 采用第一个正在运行的（见 [OCI sandbox](/zh-cn/sandbox/oci/#容器引擎)）
+- PM2 用户可以使用的容器引擎：nerdctl、Podman 或 Docker，mikan 采用第一个正在运行的（见 [OCI sandbox](/zh-cn/sandbox/oci/#容器引擎)）
 
 发布的 `mikan-sandbox` 镜像是工具运行时，不是独立的 mikan 服务器镜像。PM2 在主机上运行 `mikan`；oci 模式通过主机 Docker daemon 创建和管理容器。
 
@@ -94,17 +94,17 @@ pm2 reload ~/.mikan/ecosystem.config.cjs
 
 会改变持久化文件格式的版本会附带一个有编号的迁移。只要还有待应用的迁移，daemon 就会拒绝启动，并打印应执行的完整 `mikan migrate` 命令；它不会自行转换任何文件。已应用的迁移记录在 `~/.mikan/migrations.json`。
 
-安装新版本后，先检查有没有待应用的迁移。`--dry-run` 只读取，daemon 运行时也可以安全使用。请传入与 daemon 相同的 `--sandbox` 和工作区：
+安装新版本后，先检查有没有待应用的迁移。`--dry-run` 只读取，daemon 运行时也可以安全使用。如果 daemon 的工作区不是 `~/.mikan/workspace`，请传入 `--workspace <dir>`：
 
 ```bash
-mikan migrate --sandbox=oci:mikan-sandbox:latest --dry-run
+mikan migrate --dry-run
 ```
 
 如果输出 `No pending migrations.`，按上面的方式重新加载即可。否则先停止 daemon、应用迁移，再重新启动：
 
 ```bash
 pm2 stop mikan
-mikan migrate --sandbox=oci:mikan-sandbox:latest
+mikan migrate
 pm2 start mikan
 ```
 
@@ -117,13 +117,13 @@ pm2 start mikan
 1. **备份。** 停止 0.5.3 的 daemon，复制它的 state directory 和 working directory。迁移会重命名两边的目录。
 2. **安装 1.0。** 需要 Node.js 24.15.0 及以上：`npm i -g @geminixiang/mikan@latest`。
 3. **把状态移到 `~/.mikan`。** 1.0 没有 `--state-dir`；如果 0.5.3 的状态放在其他位置，请把该目录移到 `~/.mikan`，并从进程管理器执行的命令中去掉 `--state-dir`。
-4. **选择支持的沙盒。** 1.0 支持 `host`、`container:<name>` 和 `oci:<image>`。使用 `firecracker:*` 或 `cloudflare:*` 的 0.5.3 安装，要先改用其中一种。
+4. **使用 `oci` 沙盒。** mikan 让每个办公室在它管理的容器中运行，所以主机需要 nerdctl、Podman 或 Docker。无论 0.5.3 用的是哪种沙盒，daemon 都以 `--sandbox=oci` 或 `--sandbox=oci:<image>` 启动。
 5. **迁移 provider key。** 0.5.3 从 `~/.pi/mikan/auth.json` 读取的 key 不会被迁移；请设置到 `~/.mikan/mikan.env`，或保留在 `models.json`。
-6. **迁移。** 传入 0.5.3 的 working directory 和 daemon 之后要用的沙盒，先预览再执行：
+6. **迁移。** 传入 0.5.3 的 working directory，先预览再执行：
 
    ```bash
-   mikan migrate --workspace /srv/mikan --sandbox=oci:mikan-sandbox:latest --dry-run
-   mikan migrate --workspace /srv/mikan --sandbox=oci:mikan-sandbox:latest
+   mikan migrate --workspace /srv/mikan --dry-run
+   mikan migrate --workspace /srv/mikan
    ```
 
 7. **启动并检查日志。** daemon 会针对每个 `settings.json` 记录 `Settings that mikan ignores; remove them from <path>`，列出 1.0 不再读取的 0.5.3 设置，例如 `llm.autoReply`；也会针对每个不再读取的环境变量记录 `Environment variable that mikan ignores`，并说明该改用什么。请把它们删除；`sentry.dsn` 设置要改成 `SENTRY_DSN` 环境变量。
@@ -131,13 +131,14 @@ pm2 start mikan
 `mikan migrate` 会：
 
 - 把对话目录及其 vault 从原始对话 id 重命名为 office key；
-- 把 `host` 模式的每用户 vault 和 `container:*` 的 vault 重命名为哈希后的 identity key；
 - 把每个对话的 `settings.json` 移到 `~/.mikan/conversations/<office-key>/`；
 - 把每个对话的会话文件导入它的 `sessions.db`，原文件保留在 `~/.mikan/conversations/<office-key>/sessions-v3/`；
 - 把 `<workspace>/events/*.json` 移到各对话仅主机可见的事件存储；
 - 删除 0.5.3 的沙盒容器；下一条消息到来时会用当前镜像重建，`/root` 从空开始；
 - 如果 mikan 还没有 `~/.mikan/models.json`，就复制 `~/.pi/agent/models.json`（或 `$PI_CODING_AGENT_DIR/models.json`）；
 - 删除每个对话目录里的 `last_prompt.jsonl` 和 `auto-reply.disabled`，1.0 不会再写这两个文件。
+
+`host` 或 `container:<name>` daemon 写下的 vault 会原样留在 `~/.mikan/vaults`，不再被读取。
 
 升级后用户会注意到的变化：
 
@@ -159,4 +160,4 @@ curl http://127.0.0.1:8181/health
 
 `/health` 仅检查 HTTP 进程是否存活。它不会验证平台连接、Docker、沙箱 provision、LLM 提供商或事件投递，因此不要将其用作唯一的就绪信号。
 
-请参阅 [GitHub 上维护的 PM2 ecosystem 文件](https://github.com/geminixiang/mikan/blob/main/deploy/pm2/ecosystem.config.cjs)和[沙箱模式](/zh-cn/sandbox/)了解特定模式的要求。
+请参阅 [GitHub 上维护的 PM2 ecosystem 文件](https://github.com/geminixiang/mikan/blob/main/deploy/pm2/ecosystem.config.cjs)和[沙箱](/zh-cn/sandbox/)了解沙箱的要求。

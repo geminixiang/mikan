@@ -81,9 +81,7 @@ Local E2E needs only four variables: `SLACK_QA_USER_TOKEN`, `SLACK_QA_CHANNEL_ID
 ### Office visibility and the test daemon
 
 The suite drives a real mikan daemon. Office visibility follows the Slack conversation type, and the
-DM scenarios run as private offices. A host-mode QA daemon cannot enforce that visibility; it serves
-the private offices anyway and logs one warning per office. No settings override is needed. This is
-appropriate for a disposable single-tenant QA runner and nowhere else.
+DM scenarios run as private offices. No settings override is needed.
 
 The QA user token must be able to post messages, read channel history/replies, and upload files for S-009 in the test channel. For the DM scenarios it must also authenticate as a human user (`auth.test` without `bot_id`): mikan deliberately does not reply to DMs from bots, so a bot-flavored token makes S-017/S-018 fail fast with a misconfiguration error. The E2E manifest in `deploy/examples/slack-app-manifest.e2e.json` includes these required user scopes; the normal `deploy/examples/slack-app-manifest.json` does not.
 

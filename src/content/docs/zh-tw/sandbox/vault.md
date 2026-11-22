@@ -1,6 +1,6 @@
 ---
 title: Vault
-description: mikan 如何把 credentials 存在 state directory，並依 sandbox 模式注入 env 或 file mounts。
+description: mikan 如何把 credentials 存在 state directory，並把 env 與 file mounts 注入 sandbox。
 ---
 
 ## State directory 與 vault 位置
@@ -69,13 +69,7 @@ Vault 裡的內容並不是同一類的祕密：
 
 ## Sandbox 行為
 
-| Sandbox mode       | Vault env injection | File credentials   | Vault key             |
-| ------------------ | ------------------- | ------------------ | --------------------- |
-| `host`             | 不注入              | 拒絕               | 由平台使用者推導      |
-| `container:<name>` | 注入                | 拒絕               | 由 container 名稱推導 |
-| `oci:<image>`      | 注入                | 投影（bind mount） | office key            |
-
-**「拒絕」的意思是執行會失敗，而不是靜靜地忽略那個檔案。** 只要 vault 目錄中存在 `env` 以外的任何檔案，就會解析出 file mount；無法掛載檔案的模式會拋出 `Sandbox type "<type>" does not support vault file mounts`，而不是在憑證不完整的情況下執行。因此在這些模式上，請只把憑證放在 `env` 裡——一個從先前 `oci` 部署留在 vault 中的 `gws.json`，就足以讓該對話無法執行。
+mikan 會把 vault 的 `env` 項目注入 office 的 container，並把 credential 檔案以 bind mount 投影進去。Vault key 就是 office key。
 
 office key 由平台名稱與該平台的原始 conversation id 一起雜湊而來，因此兩個共用相同 raw id 的平台無法解析到對方的憑證。`mikan migrate` 會把 0.5.3 的 vault 目錄改名為 office key；若兩個目錄都存在，它會停下來讓人手動合併，而不是自行挑一個。
 

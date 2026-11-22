@@ -2,7 +2,7 @@ import type { ImageContent } from "@earendil-works/pi-ai";
 import { existsSync, lstatSync } from "node:fs";
 import { join, posix } from "node:path";
 import type { ConversationMessage } from "../types.js";
-import type { RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
+import type { RuntimePathContext } from "../sandbox/types.js";
 import { formatSkillsForPrompt } from "./skills.js";
 import type { WorkspaceProjection, Office } from "../office/types.js";
 import { formatHistoryLine, stripTriggerSignature } from "../sessions/history-line.js";
@@ -154,26 +154,12 @@ export function getMemory(projection: WorkspaceProjection): string {
   return parts.length > 0 ? parts.join("\n\n") : "(no working memory yet)";
 }
 
-function buildEnvDescription(sandboxType: SandboxConfig["type"], workspaceRoot: string): string {
-  switch (sandboxType) {
-    case "oci":
-      return `You are running inside a managed per-conversation container.
+function buildEnvDescription(workspaceRoot: string): string {
+  return `You are running inside a managed per-conversation container.
 - Runtime workspace root: ${workspaceRoot}
 - Bash commands start in: ${workspaceRoot}
 - Install tools with the image's package manager
 - Only files under ${workspaceRoot} persist; installed packages and anything else in the container are discarded when the sandbox image is updated`;
-    case "container":
-      return `You are running inside a shared container.
-- Runtime workspace root: ${workspaceRoot}
-- Bash commands start in: ${workspaceRoot}
-- Install tools with the container's package manager
-- Your changes persist across sessions`;
-    default:
-      return `You are running directly on the host machine.
-- Runtime workspace root: ${workspaceRoot}
-- Bash commands start in: ${workspaceRoot}
-- Be careful with system modifications`;
-  }
 }
 
 export function resolveTriggerAttribution(
@@ -192,7 +178,7 @@ function mappingTable(rows: string[], empty: string): string {
 }
 
 function buildContextPrompt(input: BuildSystemPromptOptions, paths: RuntimePromptPaths): string {
-  const { platform, sandboxConfig, projection } = input;
+  const { platform, projection } = input;
   const { workspaceRoot, scratchPath } = paths;
   const readable = new Set(projection.readableConversationIds);
   const channelMappings = mappingTable(
@@ -203,7 +189,7 @@ function buildContextPrompt(input: BuildSystemPromptOptions, paths: RuntimePromp
     platform.users.map((u) => `${u.id}\t@${u.userName}\t${u.displayName}`),
     "(no users loaded)",
   );
-  const envDescription = buildEnvDescription(sandboxConfig.type, workspaceRoot);
+  const envDescription = buildEnvDescription(workspaceRoot);
   const slackBlockKitInstructions =
     platform.name === "slack"
       ? `
@@ -300,9 +286,8 @@ ${skills.length > 0 ? formatSkillsForPrompt(skills) : "(no skills installed yet)
 }
 
 function buildOperatingPrompt(input: BuildSystemPromptOptions, paths: RuntimePromptPaths): string {
-  const { memory, projection, sandboxConfig } = input;
+  const { memory, projection } = input;
   const { workspaceRoot, conversationPath } = paths;
-  const isContainerLike = sandboxConfig.type === "container" || sandboxConfig.type === "oci";
   const globalMemoryReadOnly = projection.promptSources.globalKnowledgeReadOnly === true;
   const memoryGuidance = globalMemoryReadOnly
     ? `\`${workspaceRoot}/MEMORY.md\` is shared workspace memory mounted read-only for this private office: you can read what public channels have learned, but writes to it are rejected. Write everything you learn here to \`${conversationPath}/MEMORY.md\` instead; it never leaves this conversation.`
@@ -343,7 +328,7 @@ ${memory}
 Format: \`{"date":"...","ts":"...","user":"...","userName":"...","text":"...","isMessagingBot":false}\`
 The log contains user messages and your final responses (not tool calls/results).
 Use \`log.jsonl\` for grep-style history.
-${isContainerLike ? "Install jq: apt-get install jq" : ""}
+Install jq: apt-get install jq
 \`\`\`bash
 # Recent messages
 tail -30 log.jsonl | jq -c '{date: .date[0:19], user: (.userName // .user), text}'

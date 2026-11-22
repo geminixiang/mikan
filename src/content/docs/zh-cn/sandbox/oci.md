@@ -37,7 +37,7 @@ mikan --sandbox=oci:mikan-sandbox:latest /path/to/workspace
 
 ## 容器引擎
 
-mikan 通过 docker 指令集操作容器，nerdctl（containerd）、Podman、Docker 都接受这套指令。不需要指定引擎：使用 `container:*` 或 `oci:*` 时，mikan 依序检查 `nerdctl`、`podman`、`docker`，采用第一个 `info` 成功的引擎，并在启动时记录。本页指令中的 `docker` 请换成该引擎。容器属于创建它的引擎，所以如果主机之后启动了另一个引擎（例如登录时启动 Podman machine），会建立新的容器，旧引擎的容器会留着；要固定引擎，在 `~/.mikan/mikan.env` 设置 `CONTAINER_ENGINE`。rootless Podman 需要主机把 cgroup 的 CPU 和 memory controller 委派给用户，macOS 上的 Podman machine 已经委派。
+mikan 通过 docker 指令集操作容器，nerdctl（containerd）、Podman、Docker 都接受这套指令。不需要指定引擎：mikan 依序检查 `nerdctl`、`podman`、`docker`，采用第一个 `info` 成功的引擎，并在启动时记录。本页指令中的 `docker` 请换成该引擎。容器属于创建它的引擎，所以如果主机之后启动了另一个引擎（例如登录时启动 Podman machine），会建立新的容器，旧引擎的容器会留着；要固定引擎，在 `~/.mikan/mikan.env` 设置 `CONTAINER_ENGINE`。rootless Podman 需要主机把 cgroup 的 CPU 和 memory controller 委派给用户，macOS 上的 Podman machine 已经委派。
 
 在 macOS 上，每个引擎都是在 VM 里运行 Linux，bind mount 只能挂载 VM 共享的文件夹；请把 workspace 和 `~/.mikan` 放在家目录下。
 

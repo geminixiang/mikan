@@ -31,9 +31,7 @@ function eventStore(): EventStore {
 function boundAttachTool(uploadFile: ConversationResponder["uploadFile"]) {
   root = mkdtempSync(join(tmpdir(), "mikan-bind-run-"));
   const env = new NodeExecutionEnv({ cwd: root });
-  const { tools, bindRun } = createMikanTools(() => env, eventStore(), {
-    sandbox: { type: "host" },
-  });
+  const { tools, bindRun } = createMikanTools(() => env, eventStore(), {});
   bindRun({
     message: { address, conversationKind: "shared", userId: "U1" },
     responder: { uploadFile } as Pick<ConversationResponder, "uploadFile"> as ConversationResponder,

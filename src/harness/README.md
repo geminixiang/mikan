@@ -137,9 +137,8 @@ File and shell behavior comes from `@earendil-works/pi-durable/tools`. mikan's
 thin adapter preserves their schemas, adds the presentation `label`, and the
 Harness supplies the run's authorized sandbox `ExecutionEnv` as `api.env`.
 Execution tools fail without one; there is no implicit host fallback.
-Host mode uses Pi's `NodeExecutionEnv`; container sandboxes use
-pi-env's `RemoteExecutionEnv` through `src/sandbox/container.ts`. Both pass
-Pi's `registerEnvConformance` suite.
+The sandbox env is pi-env's `RemoteExecutionEnv` through
+`src/sandbox/container.ts`, which passes Pi's `registerEnvConformance` suite.
 Every mikan tool is a pi-durable `ToolRegistration`: it reports progress with
 `api.details`, reads cancellation from `context.abortSignal`, and returns Pi's
 `ToolExecutionResult`. Integrations without sandbox tools may omit `toolContext`.

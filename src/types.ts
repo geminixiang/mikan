@@ -5,7 +5,7 @@ import type { McpServerConfig } from "./harness/types.js";
 import type { EventScheduleSink } from "./events/index.js";
 import type { Office } from "./office/types.js";
 import type { DockerContainerManager } from "./sandbox/provisioner.js";
-import type { DesktopStart, DockerExecFile, SandboxConfig } from "./sandbox/types.js";
+import type { DesktopStart, DockerExecFile } from "./sandbox/types.js";
 import type { ChatHistorySync } from "./sessions/chat-history-sync.js";
 import type { ResolvedSessionScope } from "./sessions/types.js";
 import type { PlatformToolPackFactory } from "./harness/tools/types.js";
@@ -315,7 +315,7 @@ export interface DockerContainerManagerOptions {
 export interface ExecutionPlan {
   credentialKey: string;
   resourceKey: string;
-  sandboxConfig: SandboxConfig;
+  container: string;
   env?: Record<string, string>;
   mounts: ContainerMount[];
 }
@@ -358,7 +358,6 @@ export interface GlobalRunnerCacheControl {
 export type SettingsApplyResult = { ok: true; runtimeSwitched: boolean | null } | { ok: false };
 
 export interface CreateRunnerOptions {
-  sandboxConfig: SandboxConfig;
   sessionKey: string;
   office: Office;
   trustModel: PlatformTrustModel;
@@ -368,7 +367,7 @@ export interface CreateRunnerOptions {
   sessionScope: ResolvedSessionScope;
   chatHistory: ChatHistorySync;
   signal?: AbortSignal;
-  vaultManager?: VaultManager;
+  vaultManager: VaultManager;
   provisioner?: DockerContainerManager;
   resourceController?: SandboxResourceController;
   execution?: RunnerExecutionContext;

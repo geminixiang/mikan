@@ -4,19 +4,17 @@ This directory defines sandbox configuration, the execution environments tools r
 
 ## Contracts
 
-- `identity.ts` derives credential authorization keys and runtime resource keys separately, so neither can collide with the other.
-- A backend without managed projection cannot enforce a private office's visibility; `warnUnenforcedPrivateOffice` in `registry.ts` logs that once per office and lets the run continue, because those backends are operator-selected trusted deployments.
 - Managed image containers (`provisioner.ts`) are disposable (ADR 0014): only the bind mounts from the office projection and vault outlive them. A container with mount or network drift, or a stopped one whose image differs from the local tag's image ID, is replaced with `rm -f` and `run`. A running container is never replaced for an image change. `prepareImage` pulls the configured image once per process, at daemon start; `--sandbox=oci` means the image published for this mikan version (ADR 0023). Whenever it replaces a container whose image differs from the configured one, whatever the drift reason, the provisioner runs `rmi` without force on the old container's published reference, or on its image ID only when that image has no name left, because Docker deletes an image by ID even while one name still points to it. Engines refuse `rmi` while any container uses the image. nerdctl cannot remove by image ID, which costs nothing because a tag that moves on containerd leaves no unnamed image behind.
 - `provision`, `stop`, and `remove` are serialized per key.
 - A backend is accepted by its contract, not its technology: per-office environment isolation, adjustable resource limits, a persistent workspace and vault, and a workspace mounted from the host on the same machine, on Linux and macOS ([ADR 0022](../../docs/adr/0022-sandbox-contract-not-a-container-engine.md)). Today it is the docker command set, run by the first of `nerdctl`, `podman`, and `docker` whose `info` succeeds, detected once per process unless `CONTAINER_ENGINE` pins one (`engine.ts`). Containers belong to the engine that created them, so a host whose detected engine changes gets new containers and leaves the old ones behind. The provisioner uses only queries the three answer alike: `ps`/`network ls` name filters for existence, `.Mounts` for binds, mikan's `mikan.network` and `mikan.image-id` labels for network and image drift, and `--cpu-period`/`--cpu-quota` for CPU limits, because nerdctl ignores `update --cpus`, Podman reports binds with mount options and its network mode as `bridge`, and nerdctl reports `.Image` as a name. `src/test/container-provisioner-engine.test.ts` runs the provisioner against whichever engine is configured.
 - The office desktop (ADR 0025) is the image's `mikan-desktop` script, the in-container contract: `start` runs headless Sway with wayvnc on `127.0.0.1:6080` and returns once both are up, serialized with `flock` so concurrent viewers cannot start two sessions, and restarting only wayvnc while Sway lives so open windows survive, and `connect` bridges stdio to wayvnc. `desktop.ts` runs it from the host with `<engine> exec` and a 20-second timeout, never through pi-env, because the pi-env daemon kills the process groups it starts when its connection ends. An image without the script answers `executable file not found` on stdout or stderr depending on the engine, which `start` reports as `outdated-image`. A connected viewer `retain`s its container so `stopIdle` skips it; the release counts as use.
-- A sandbox reaches tools only as Pi's `ExecutionEnv` (`@earendil-works/pi-durable/env`): `host` is Pi's `NodeExecutionEnv` and `container` is pi-env's `RemoteExecutionEnv` (`@earendil-works/pi-env`) talking to Pi's `pi-env` daemon inside the container. `oci` has no environment of its own; the harness resolver provisions its container and then builds a `container` environment for it. A new backend implements `ExecutionEnv` and passes `registerEnvConformance`, as `src/test/container-execution-env.test.ts` does, instead of adding a mikan-specific interface.
+- A sandbox reaches tools only as Pi's `ExecutionEnv` (`@earendil-works/pi-durable/env`): pi-env's `RemoteExecutionEnv` (`@earendil-works/pi-env`) talking to Pi's `pi-env` daemon inside the office's container, which the harness resolver provisions first. A new backend implements `ExecutionEnv` and passes `registerEnvConformance`, as `src/test/container-execution-env.test.ts` does, instead of adding a mikan-specific interface.
 - `createContainerExecutionEnv` (`container.ts`) keeps one pi-env connection per container for the whole process: `<engine> exec -i <container> /tmp/mikan-pi-env-<sha>`. The engine is detected on first connection, not when an environment is created. Before each connection it readies the container and copies the packaged Linux daemon for the container's architecture to that path if it is missing, so a replaced or restarted container gets it again. Each run's environment readies its container once, through the resolver's provisioning, so drift is checked per run, and marks every operation as use for idle stopping. Its `id` is `container:<name>`, so Pi's edit and write queues serialize changes to one file across runs that share a container.
 - The daemon runs each command in its own process group, kills it on abort, timeout, or `cleanup()`, and kills every group it started when its connection ends, so a crashed or stopped mikan leaves no command running. Docker and Podman end the connection as soon as mikan's `exec` client dies; native nerdctl keeps the stream open, so there the daemon's 30-second ping timeout ends it. A daemon killed with `SIGKILL` inside the container, for example by the agent, cannot kill its groups; their commands run until they exit or the container stops. The agent can replace the daemon file in its own container, which gives it nothing it could not already run there; the host only parses the daemon's framed replies.
 
-## Host / sandbox path boundary (oci mode)
+## Host / sandbox path boundary
 
-mikan's primary deployment is `oci:*`: the mikan process (LLM calls, session
+The mikan process (LLM calls, session
 persistence, platform bots) runs on the **host**, while
 agent tool commands execute inside a per-conversation **container**.
 
@@ -45,7 +43,7 @@ Rules enforced in code:
   (`0003-conversation-settings`), and `conversationSettingsPath(office)` never
   reads the mounted location; malformed settings throw rather than falling
   back to a mounted copy.
-- Startup refuses (fatal under sandboxed modes) a working directory that
+- Startup refuses a working directory that
   contains `~/.mikan` (`assertStateDirOutsideWorkspace`).
 - Multi-instance hosts run each instance as its own user, because the state
   dir is that user's `~/.mikan`; conversation settings, auth, and vaults are
@@ -69,10 +67,6 @@ Visibility follows the Slack conversation type: public channels are public;
 private channels, DMs, group DMs, externally shared channels, and unknown kinds
 are private. An operator may narrow a public channel with Admin. Nothing mounts the workspace root; offices
 still declaring the retired `full` door policy get the same shape.
-
-Only the managed `oci:*` backend consumes and enforces these mount flags.
-Host and existing-container modes ignore them and log once per
-private office that its visibility is not enforced.
 
 Changing the policy changes the container's desired mounts, which reads as
 drift: the provisioner recreates the container with the new binds while

@@ -1,7 +1,6 @@
 import type { Api, Model } from "@earendil-works/pi-ai";
 import { createAttachTool, normalizeAttachRuntimePath, withStagedRuntimeFile } from "./attach.js";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
-import type { SandboxConfig } from "../../sandbox/types.js";
 import type { SandboxResourceController } from "../../types.js";
 import type { EventStore } from "../../events/index.js";
 import { createEventTool } from "./event.js";
@@ -20,7 +19,6 @@ export function createMikanTools(
   env: () => ExecutionEnv | undefined,
   eventStore: EventStore,
   sandboxController: {
-    sandbox: SandboxConfig;
     resourceController?: Pick<SandboxResourceController, "getLimitStatus" | "setLimits">;
   },
   platformToolPacks: readonly PlatformToolPack[] = [],

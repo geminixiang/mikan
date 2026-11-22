@@ -5,7 +5,6 @@ import { guestHomePath } from "../sandbox/layout.js";
 import type { OfficeAddress } from "../types.js";
 import { atomicWritePrivateFile, readTextFileIfExists } from "../file-guards.js";
 import { reportUserFacingError } from "../observability/index.js";
-import type { SandboxConfig, SandboxCredentialCapabilities } from "../sandbox/types.js";
 import type { PlatformTrustModel } from "../types.js";
 
 const PRIVATE_DIR_MODE = 0o700;
@@ -423,13 +422,10 @@ function inferredVaultTargetPath(relativePath: string): string | undefined {
   return defaultVaultTargetPath(normalized);
 }
 
-export function allowsAmbientDefaultSharedVault(options: {
-  trustModel?: PlatformTrustModel;
-  sandboxType: SandboxConfig["type"];
-}): boolean {
-  const trustModel = options.trustModel ?? "membership";
-  if (trustModel === "open-trigger") return false;
-  return options.sandboxType === "oci";
+export function allowsAmbientDefaultSharedVault(
+  trustModel: PlatformTrustModel = "membership",
+): boolean {
+  return trustModel !== "open-trigger";
 }
 
 import type { VaultInjection } from "./types.js";
@@ -437,7 +433,6 @@ import { isRecord } from "../unknown-values.js";
 
 function resolveExistingMounts(
   vault: ResolvedVault | undefined,
-  sandboxType: SandboxConfig["type"],
   address: OfficeAddress,
 ): ResolvedVaultMount[] {
   const mounts: ResolvedVaultMount[] = [];
@@ -449,7 +444,7 @@ function resolveExistingMounts(
         operation: "resolve_mounts",
         severity: "warning",
         context: {
-          sandboxType,
+          sandboxType: "oci",
           conversationId: address.conversationId,
           target: mount.target,
           hasVault: Boolean(vault),
@@ -462,20 +457,10 @@ function resolveExistingMounts(
   return mounts;
 }
 
-export function resolveVaultInjection(options: {
-  vault: ResolvedVault | undefined;
-  capabilities: SandboxCredentialCapabilities;
-  sandboxType: SandboxConfig["type"];
-  address: OfficeAddress;
-}): VaultInjection {
-  const { vault, capabilities, sandboxType, address } = options;
-  if (vault && vault.mounts.length > 0 && !capabilities.fileMounts) {
-    throw new Error(`Sandbox type "${sandboxType}" does not support vault file mounts`);
-  }
-
-  const mounts = resolveExistingMounts(vault, sandboxType, address);
-
-  const env =
-    capabilities.env && vault && Object.keys(vault.env).length > 0 ? vault.env : undefined;
-  return { env, mounts };
+export function resolveVaultInjection(
+  vault: ResolvedVault | undefined,
+  address: OfficeAddress,
+): VaultInjection {
+  const env = vault && Object.keys(vault.env).length > 0 ? vault.env : undefined;
+  return { env, mounts: resolveExistingMounts(vault, address) };
 }

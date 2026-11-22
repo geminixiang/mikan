@@ -69,10 +69,8 @@ description: 了解 mikan 如何连接平台适配器、对话办公室、会话
 职责：
 
 - 把每个沙箱提供为 Pi 的 `ExecutionEnv`
-- 按工作区能力划分沙箱运行时：
-  - 非受管投影：`host` / `container:<name>`
-  - 受管投影：`oci:<image>`，强制执行 private 办公室的 visibility：无法触及其他 private 办公室，共享知识为只读
-- 在 `oci` 模式下自动创建和回收容器，将 `oci:<image>` 解析为具体的 `container:<name>` 环境
+- 把每个办公室在工作区中的部分投影进它的容器，强制执行 private 办公室的 visibility：无法触及其他 private 办公室，共享知识为只读
+- 从 `oci` 镜像为每个办公室自动创建和回收一个容器
 
 ### E. 对话办公室层
 
@@ -221,7 +219,7 @@ flowchart TD
   WebServer --> VaultManager["vault/index.ts\nwrite env/file into vault"]
   VaultManager --> VaultDir["~/.mikan/vaults/<vaultId>/"]
   VaultManager --> Resolver["harness/execution-resolver.ts"]
-  Resolver --> Sandbox["host / container / image"]
+  Resolver --> Sandbox["oci container"]
 ```
 
 要点：
@@ -229,7 +227,7 @@ flowchart TD
 - 凭证不会直接进入工作区
 - vault 位于 `~/.mikan`
 - 执行时，办公室的 vault 会路由到相应沙箱
-- `oci` 模式按 office key 标识 vault——也就是在工作区和注册表中命名该办公室的同一个字符串；`container:<name>` 使用共享容器 vault；`host` 按用户标识，且不注入 vault 环境变量
+- vault 按 office key 标识——也就是在工作区和注册表中命名该办公室的同一个字符串
 
 ## 6. 事件与普通聊天的区别
 

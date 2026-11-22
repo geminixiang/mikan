@@ -1,10 +1,9 @@
 import * as log from "../../log.js";
-import { credentialAuthorizationKey, runtimeResourceKey } from "../../sandbox/identity.js";
 import { sharedVaultKey } from "../../vault/index.js";
 import { slashForms, matchCommand } from "./manifest.js";
 import type { CommandContext, CommandHandler, ParsedLoginCommand } from "./types.js";
 import { portalNotConfiguredLines, replySummary } from "./utils.js";
-import { createOfficeAddress } from "../../office/index.js";
+import { createOfficeAddress, officeKey } from "../../office/index.js";
 import { errorMessage } from "../../unknown-values.js";
 
 const LOGIN_COMMANDS = slashForms("login");
@@ -36,16 +35,13 @@ function parseSharedLogin(
 }
 
 function ensureLoginVault(context: CommandContext): string {
-  const { services, platformUserId, conversationId, vaultConversationId } = context;
-  return credentialAuthorizationKey(services.sandbox, {
-    userId: platformUserId,
-    address: createOfficeAddress(context.address.platform, vaultConversationId ?? conversationId),
-  });
+  const { conversationId, vaultConversationId } = context;
+  return officeKey(
+    createOfficeAddress(context.address.platform, vaultConversationId ?? conversationId),
+  );
 }
 
 async function refreshCopiedVaultRuntime(context: CommandContext): Promise<string | undefined> {
-  if (context.services.sandbox.type !== "oci") return undefined;
-
   const targetAddress = createOfficeAddress(
     context.address.platform,
     context.vaultConversationId ?? context.conversationId,
@@ -59,11 +55,7 @@ async function refreshCopiedVaultRuntime(context: CommandContext): Promise<strin
     return "The cached session was refreshed. The sandbox will pick up copied credentials on the next provision.";
   }
 
-  const resourceKey = runtimeResourceKey(context.services.sandbox, {
-    userId: context.platformUserId,
-    address: targetAddress,
-  });
-  await context.services.provisioner.remove(resourceKey);
+  await context.services.provisioner.remove(officeKey(targetAddress));
   return "The sandbox container was removed and will be recreated with the copied env and file mounts on the next message.";
 }
 
@@ -162,7 +154,7 @@ async function startLoginSetup(context: CommandContext, parsed: ParsedLoginComma
   );
   await replySummary(context, "Vault", [
     `${context.services.portalBaseUrl}/link?token=${token.token}`,
-    `Target: ${loginVaultLabel(context, parsed, vaultId)} · Expires: 15 minutes`,
+    `Target: ${loginVaultLabel(parsed)} · Expires: 15 minutes`,
   ]);
 }
 
@@ -175,15 +167,9 @@ function resolveLoginVaultId(context: CommandContext, parsed: ParsedLoginCommand
   );
 }
 
-function loginVaultLabel(
-  context: CommandContext,
-  parsed: ParsedLoginCommand,
-  vaultId: string,
-): string {
+function loginVaultLabel(parsed: ParsedLoginCommand): string {
   if (parsed.action === "shared_create" || parsed.action === "shared_update") {
     return `shared login profile (${parsed.name})`;
   }
-  return context.services.sandbox.type === "container"
-    ? `container vault (${vaultId})`
-    : "your vault";
+  return "your vault";
 }

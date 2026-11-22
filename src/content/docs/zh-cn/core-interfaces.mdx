@@ -45,11 +45,11 @@ flowchart TD
 | **Runtime/session**    | `src/runtime/`、`src/sessions/`                                          | 会话密钥语法、per-session 串行化、聊天/会话同步、runner 生命周期、stop/reset 和关闭                   | 交给 runner 的已验证事件；交给执行解析的办公室与 actor 输入                                |
 | **Harness/tools**      | `src/harness/`、`src/harness/tools/`                                     | 模型轮次、执行解析、预算、工具 schema、skill 和主机能力调用                                           | `ConversationResponder` 输出与 `ExecutionEnv` 操作；它不接收平台 SDK 对象                  |
 | **Scheduled events**   | `src/events/`                                                            | 事件 wire protocol、解析/构建、限定于单个办公室的 host store、文件名校验和调度器生命周期              | 向 harness/Web 提供 `EventStore`；向平台消息接口提供规范化事件                             |
-| **Sandbox/workspace**  | `src/sandbox/`                                                           | 执行环境实现、mount 拓扑、runtime/主机路径上下文、托管容器生命周期和文件传输                          | 一个声明了路径与凭证能力的 Pi `ExecutionEnv`                                               |
-| **Vault/web/security** | `src/vault/`、`src/adapters/web/`、`src/sandbox/identity.ts`             | 凭证身份与注入策略、仅主机的 portal/token 界面、mount 冲突检查，以及安全敏感的授权决策                | 交给 vault 策略的 actor/信任输入；凭证只交给选定的环境                                     |
+| **Sandbox/workspace**  | `src/sandbox/`                                                           | 执行环境实现、mount 拓扑、runtime/主机路径上下文、托管容器生命周期和文件传输                          | 一个 Pi `ExecutionEnv` 及其 runtime 路径上下文                                             |
+| **Vault/web/security** | `src/vault/`、`src/adapters/web/`                                        | 凭证身份与注入策略、仅主机的 portal/token 界面、mount 冲突检查，以及安全敏感的授权决策                | 交给 vault 策略的 actor/信任输入；凭证只交给选定的环境                                     |
 | **Config/CLI**         | `src/settings/`、`src/cli/`、`src/migrations/`、`src/adapters/commands/` | 启动/flag 语法、设置持久化、状态迁移和命令清单                                                        | 生效设置和确定性的命令清单                                                                 |
 
-一个对话的框架实例与其他实例是上下文隔离的，但那不是文件系统或进程沙箱。同样地，沙箱的执行环境改变的是工具在哪里运行以及它们接收哪些 mount；`host` 模式以及非受管的 `container:*` 模式都不会强制执行办公室 visibility。审查缝隙时请把这些关注点分开。
+一个对话的框架实例与其他实例是上下文隔离的，但那不是文件系统或进程沙箱。沙箱的执行环境决定工具在哪里运行以及它们接收哪些 mount。审查缝隙时请把这些关注点分开。
 
 ### 跨归属缝隙
 
@@ -206,25 +206,13 @@ interface ConversationContext {
 
 ### `SandboxConfig`
 
-该可辨识联合目前支持 `host`、`container` 和 `oci`。解析语法与成熟度记录在 [沙箱](/zh-cn/sandbox/)。
+`SandboxConfig` 是 oci 的配置：用来创建每个办公室容器的镜像。`--sandbox` 的语法记录在[沙箱](/zh-cn/sandbox/)。
 
 ### `ExecutionEnv`
 
-执行边界是 `@earendil-works/pi-durable/env` 的 Pi `ExecutionEnv`，Pi 自己的 `read`、`write`、`edit`、`bash` 工具正是针对这个接口编写的。mikan 不再添加自己的接口：
+执行边界是 `@earendil-works/pi-durable/env` 的 Pi `ExecutionEnv`，Pi 自己的 `read`、`write`、`edit`、`bash` 工具正是针对这个接口编写的。mikan 不再添加自己的接口。actor/vault 解析先 provision 办公室的容器，工具再通过 pi-env 的 `RemoteExecutionEnv`，经一条 `exec -i` 连接与容器内 Pi 的 `pi-env` daemon 通信。
 
-| 沙箱        | 环境                                                                                       |
-| ----------- | ------------------------------------------------------------------------------------------ |
-| `host`      | Pi 的 `NodeExecutionEnv`                                                                   |
-| `container` | pi-env 的 `RemoteExecutionEnv`，通过一条 `exec -i` 连接与容器内 Pi 的 `pi-env` daemon 通信 |
-| `oci`       | 没有直接的环境：actor/vault 解析先 provision 容器，再使用它的 `container` 环境             |
-
-每个环境都必须通过 Pi 的 `registerEnvConformance` 测试集；`src/test/container-execution-env.test.ts` 负责运行它。工具实现调用环境的文件操作，而不是构建 `cat`、`printf` 或引用协议。
-
-### `SandboxAdapter`
-
-适配器识别一个 CLI 值，可选地验证它，并可选地创建一个环境。`oci` 有意没有直接的环境：actor/vault 解析会先 provision 一个具体的容器。
-
-适配器注册是 `src/sandbox/registry.ts` 内部的封闭列表，包既不导出 `SandboxAdapter`，也不导出该注册表。
+该环境必须通过 Pi 的 `registerEnvConformance` 测试集；`src/test/container-execution-env.test.ts` 负责运行它。工具实现调用环境的文件操作，而不是构建 `cat`、`printf` 或引用协议。
 
 ## 8. Vault 与执行解析接口
 
@@ -236,15 +224,15 @@ interface ConversationContext {
 
 1. 运行时提供平台信任、对话、用户和沙箱拓扑。
 2. 执行解析器解析 Workspace projection，然后选择 actor/vault 身份。
-3. `VaultManager` 解析 env 和 mount；collision 与 backend capability checks 验证完整 grant。
+3. `VaultManager` 解析 env 和 mount；collision check 验证完整 grant。
 4. 单个 execution decision 返回 projection、runtime path context，以及只带本次 run 所需凭证的执行环境。
 5. 提示词 memory/skills 与文件系统执行使用同一份 decision，不再分别重算 authorization。
 
-Host 沙箱执行绝不接收 vault 注入。开放触发平台绝不接收环境共享 vault。这些是安全不变式，而非便利默认值。
+开放触发平台绝不接收环境共享 vault。这是安全不变式，而非便利默认值。
 
 ## 9. 办公室、会话、聊天与身份接口
 
-来源：`src/office/*`、`src/sessions/*`、`src/adapters/shared.ts` 与 `src/sandbox/identity.ts`。
+来源：`src/office/*`、`src/sessions/*` 与 `src/adapters/shared.ts`。
 
 ### `Workspace` 与 `Office`
 
@@ -320,7 +308,7 @@ type EventFilePayload =
 | `~/.mikan/conversations/<officeKey>/sessions.db`   | session store         | 仅主机的代理历史（pi-durable SQLite） |
 | `~/.mikan/conversations/<officeKey>/events/*.json` | event store           | 仅主机的计划事件                      |
 
-`MEMORY.md`、`skills`、`events` 和 `agents` 是工作区根目录的保留名称（`RESERVED_WORKSPACE_NAMES`）；工作区根目录下的其他每一项都是办公室目录。对于对话范围的沙箱，`~/.mikan/vaults/` 下的对话范围 vault 目录按 office key 命名；`host` 模式按用户标识，`container` 模式按容器名标识。
+`MEMORY.md`、`skills`、`events` 和 `agents` 是工作区根目录的保留名称（`RESERVED_WORKSPACE_NAMES`）；工作区根目录下的其他每一项都是办公室目录。`~/.mikan/vaults/` 下的对话范围 vault 目录按 office key 命名。
 
 state directory 不得位于沙箱可见的工作区内部。重要的状态文件使用原子私密写入；仅追加日志使用追加语义。
 

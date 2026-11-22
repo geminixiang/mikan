@@ -129,22 +129,12 @@ mikan keeps its state in `~/.mikan`, and the working directory defaults to `~/.m
 
 The bot responds in DMs and when mentioned in channels. Triggered Slack thread work uses an isolated session whose key includes the thread timestamp. An ordinary unmentioned reply in a shared-channel thread is logged but does not start a run.
 
-## 9. Choose a sandbox
+## 9. Sandbox
 
-Without `--sandbox`, mikan runs tools directly on the host. Office visibility follows the Slack
-conversation type: public channels are public offices that write the shared `MEMORY.md` and
-`skills/`, while private channels and DMs are private offices that only read them and cannot be read
-by any other office. Host mode cannot enforce private offices; it runs them with a one-time logged
-warning. Pick one before your first real conversation:
+mikan runs each conversation in its own container. Without `--sandbox` it uses `oci`, the image
+published for the installed mikan version, so the host needs nerdctl, Podman, or Docker. Office
+visibility follows the Slack conversation type: public channels are public offices that write the
+shared `MEMORY.md` and `skills/`, while private channels and DMs are private offices that only read
+them and cannot be read by any other office. The sandbox enforces this with no settings change.
 
-- **Recommended.** Use the managed sandbox, which gives each conversation its own container and
-  enforces office visibility with no settings change:
-
-  ```bash
-  mikan --sandbox=oci
-  ```
-
-- **Host mode**, only on a machine you already trust with the whole workspace: every conversation,
-  including DMs and private channels, can read every other conversation's files.
-
-See [Sandbox](/sandbox/) for the full comparison.
+See [Sandbox](/sandbox/) for details.

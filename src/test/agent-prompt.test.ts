@@ -162,7 +162,7 @@ describe("attach path validation", () => {
   });
 });
 
-describe("host sandbox environment description", () => {
+describe("sandbox environment description", () => {
   let stateDir: string;
   let workspaceDir: string;
 
@@ -184,7 +184,6 @@ describe("host sandbox environment description", () => {
       workspacePath: workspaceDir,
       office,
       memory: "(no memory)",
-      sandboxConfig: { type: "host" },
       platform: PLATFORM,
       skills: [],
       projection: resolveWorkspaceProjection(office),
@@ -206,7 +205,6 @@ describe("host sandbox environment description", () => {
       workspacePath: workspaceDir,
       office,
       memory: "(no memory)",
-      sandboxConfig: { type: "host" },
       platform: PLATFORM,
       skills: [],
       projection: resolveWorkspaceProjection(office),
@@ -225,7 +223,6 @@ describe("host sandbox environment description", () => {
       workspacePath: "/workspace",
       office,
       memory: "(no memory)",
-      sandboxConfig: { type: "oci", image: "mikan-sandbox:latest" },
       platform: PLATFORM,
       skills: [],
       projection: resolveWorkspaceProjection(office),
@@ -244,7 +241,6 @@ describe("host sandbox environment description", () => {
       workspacePath: workspaceDir,
       office,
       memory: "(no memory)",
-      sandboxConfig: { type: "host" },
       platform: PLATFORM,
       skills: [],
       projection,
@@ -262,7 +258,6 @@ describe("host sandbox environment description", () => {
       workspacePath: "/workspace",
       office,
       memory: "(no memory)",
-      sandboxConfig: { type: "oci", image: "ubuntu:24.04" },
       platform: PLATFORM,
       skills: [],
       projection: resolveWorkspaceProjection(office),
@@ -317,7 +312,6 @@ describe("system prompt memory guidance", () => {
       workspacePath: workspaceDir,
       office,
       memory: "(no memory)",
-      sandboxConfig: { type: "container", container: "c1" },
       platform: {
         ...PLATFORM,
         channels: [
@@ -347,7 +341,6 @@ describe("system prompt memory guidance", () => {
       workspacePath: workspaceDir,
       office,
       memory: "(no memory)",
-      sandboxConfig: { type: "container", container: "c1" },
       platform: PLATFORM,
       skills: [],
       projection,
@@ -367,7 +360,6 @@ describe("system prompt memory guidance", () => {
       workspacePath: workspaceDir,
       office,
       memory: "(no memory)",
-      sandboxConfig: { type: "container", container: "c1" },
       platform: PLATFORM,
       skills: [],
       projection,
@@ -388,7 +380,6 @@ describe("system prompt memory guidance", () => {
       workspacePath: workspaceDir,
       office,
       memory: "(no memory)",
-      sandboxConfig: { type: "container", container: "c1" },
       platform: PLATFORM,
       skills: [],
       projection,
@@ -431,7 +422,6 @@ describe("scratch folder listing", () => {
       workspacePath: "/workspace",
       office,
       memory: "(no memory)",
-      sandboxConfig: { type: "oci", image: "mikan-sandbox:latest" },
       platform: PLATFORM,
       skills: [],
       projection: resolveWorkspaceProjection(office),

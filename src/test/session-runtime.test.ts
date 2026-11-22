@@ -23,7 +23,6 @@ import type { SlackEvent, SlackResponderBot } from "../adapters/slack/types.js";
 import { createRunner } from "../harness/runner.js";
 import type { RunnerFactory } from "../runtime/types.js";
 import type { PiAgentWrapper } from "../types.js";
-import type { SandboxConfig } from "../sandbox/types.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { continuedRunId } from "../harness/continued-run.js";
 import { runtimeServices } from "./runtime-services.js";
@@ -58,12 +57,10 @@ interface MakeRuntimeOptions {
 }
 
 function makeRuntime(options: MakeRuntimeOptions = {}) {
-  const sandbox: SandboxConfig = { type: "host" };
   const stateDir = join(workingDir, "state");
   const workspace = createWorkspace({ root: workingDir, stateDir });
   return createConversationRuntime({
     workspace,
-    sandbox,
     ...runtimeServices(stateDir),
     runnerFactory: options.runnerFactory ?? localRunnerFactory,
     models: options.models ?? MikanModels.create({ modelsJsonPath: join(stateDir, "models.json") }),

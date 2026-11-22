@@ -1,6 +1,6 @@
 ---
 title: Vault
-description: mikan が credentials を state directory に保存し、sandbox mode に応じて env または file mounts として注入する仕組み。
+description: mikan が credentials を state directory に保存し、env と file mounts として sandbox に注入する仕組み。
 ---
 
 ## State directory と vault の場所
@@ -67,17 +67,7 @@ Vault の内容は、一様な 1 種類の secret ではありません：
 
 ## Sandbox の挙動
 
-| Sandbox mode       | Vault env injection | File credentials       | Vault key                        |
-| ------------------ | ------------------- | ---------------------- | -------------------------------- |
-| `host`             | 注入しない          | 拒否                   | プラットフォームの user から導出 |
-| `container:<name>` | 注入する            | 拒否                   | container 名から導出             |
-| `oci:<image>`      | 注入する            | 投影する（bind mount） | office key                       |
-
-**拒否とは、ファイルが黙って無視されるのではなく、実行が失敗するという意味です。** directory に `env`
-以外のファイルを持つ vault は file mount に解決され、ファイルを mount できないモードは、不完全な認証
-情報のまま実行する代わりに `Sandbox type "<type>" does not support vault file mounts` を送出します。
-したがってこれらのモードでは、認証情報を `env` のみに留めてください。以前の `oci` デプロイから
-vault に残った `gws.json` 1 つで、その conversation は実行できなくなります。
+mikan は vault の `env` の項目を office の container に注入し、credential file を bind mount としてそこに投影します。vault key は office key です。
 
 office key は、platform 名とプラットフォームの生の conversation id を一緒に hash して導出されるため、生 id を共有する 2 つのプラットフォームが互いの認証情報を解決することはできません。衝突（両方の directory が存在する）が起きた場合は、どちらかを選ぶのではなく boot を止めて手作業での統合を促します。`mikan migrate` が 0.5.3 の vault directory を office key へ rename します。両方の directory が存在する場合は、どちらかを選ぶのではなく、手動マージのために停止します。
 

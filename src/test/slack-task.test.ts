@@ -172,7 +172,6 @@ beforeEach(async () => {
   };
   runtime = createConversationRuntime({
     workspace,
-    sandbox: { type: "host" },
     models,
     ...runtimeServices(workspace.stateDir),
     runnerFactory: localRunnerFactory,

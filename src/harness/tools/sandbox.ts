@@ -1,8 +1,7 @@
 import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { Type } from "typebox";
-import type { SandboxConfig } from "../../sandbox/types.js";
 import type { OfficeAddress, ResourceLimits, SandboxResourceController } from "../../types.js";
-import { runtimeResourceKey } from "../../sandbox/identity.js";
+import { officeKey } from "../../office/index.js";
 import { LABEL_PARAMETER } from "./host-fn-tool.js";
 
 const sandboxSchema = Type.Object({
@@ -35,7 +34,6 @@ interface SandboxToolContext {
 }
 
 interface SandboxToolController {
-  sandbox: SandboxConfig;
   resourceController?: Pick<SandboxResourceController, "getLimitStatus" | "setLimits">;
 }
 
@@ -58,14 +56,11 @@ export function createSandboxTool(controller: SandboxToolController): {
       if (!sandboxContext) {
         throw new Error("Sandbox context not configured");
       }
-      if (controller.sandbox.type !== "oci" || !controller.resourceController) {
-        throw new Error("The sandbox tool only supports oci:* managed sandboxes");
+      if (!controller.resourceController) {
+        throw new Error("Sandbox limits are not configured");
       }
 
-      const containerKey = runtimeResourceKey(controller.sandbox, {
-        userId: sandboxContext.userId,
-        address: sandboxContext.address,
-      });
+      const containerKey = officeKey(sandboxContext.address);
 
       if (params.action === "set") {
         const limits = normalizeLimits(params);

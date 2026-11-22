@@ -1,4 +1,3 @@
-import type { SandboxConfig } from "../sandbox/types.js";
 import type { PlatformName } from "../types.js";
 
 export type DockerCli = (args: readonly string[]) => Promise<string>;
@@ -9,7 +8,6 @@ export interface MigrationContext {
   readonly dryRun: boolean;
   readonly owners: ReadonlyMap<string, PlatformName>;
   readonly enabledPlatforms: readonly PlatformName[];
-  readonly sandbox: SandboxConfig;
   readonly piAgentDir: string;
   readonly modelsPath: string;
   readonly docker: DockerCli;

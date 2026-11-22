@@ -3,26 +3,14 @@ import { allowsAmbientDefaultSharedVault } from "../vault/index.js";
 
 describe("allowsAmbientDefaultSharedVault", () => {
   test("membership + image allows ambient copy", () => {
-    expect(allowsAmbientDefaultSharedVault({ trustModel: "membership", sandboxType: "oci" })).toBe(
-      true,
-    );
+    expect(allowsAmbientDefaultSharedVault("membership")).toBe(true);
   });
 
   test("defaults omitted trustModel to membership", () => {
-    expect(allowsAmbientDefaultSharedVault({ sandboxType: "oci" })).toBe(true);
+    expect(allowsAmbientDefaultSharedVault()).toBe(true);
   });
 
   test("open-trigger never allows ambient copy", () => {
-    expect(
-      allowsAmbientDefaultSharedVault({ trustModel: "open-trigger", sandboxType: "oci" }),
-    ).toBe(false);
-  });
-
-  test("host / container never use ambient copy path", () => {
-    for (const sandboxType of ["host", "container"] as const) {
-      expect(allowsAmbientDefaultSharedVault({ trustModel: "membership", sandboxType })).toBe(
-        false,
-      );
-    }
+    expect(allowsAmbientDefaultSharedVault("open-trigger")).toBe(false);
   });
 });

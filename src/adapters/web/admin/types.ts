@@ -7,7 +7,6 @@ import type {
 } from "../../../types.js";
 import type { Office, Workspace } from "../../../office/types.js";
 import type { LinkTokenStoreLike } from "../../commands/types.js";
-import type { SandboxConfig } from "../../../sandbox/types.js";
 import type { EventStore } from "../../../events/index.js";
 import type { InMemorySessionViewTokenStore } from "../session-view/portal.js";
 import type { TokenRecord } from "../types.js";
@@ -24,7 +23,6 @@ export interface AdminServices {
   portalBaseUrl?: string;
   workspace: Workspace;
   eventStore?: (office: Office) => EventStore;
-  sandbox?: SandboxConfig;
   runtime?: AdminRuntimeBridge;
   botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
 }

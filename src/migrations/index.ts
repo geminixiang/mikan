@@ -1,8 +1,6 @@
 import { join } from "node:path";
 import { atomicWritePrivateFile, readTextFileIfExists } from "../file-guards.js";
-import type { SandboxConfig } from "../sandbox/types.js";
 import { isRecord } from "../unknown-values.js";
-import { actorVaultsMigration } from "./actor-vaults.js";
 import { conversationSettingsMigration } from "./conversation-settings.js";
 import { legacyOfficeFilesMigration } from "./legacy-office-files.js";
 import { modelsJsonMigration } from "./models-json.js";
@@ -16,7 +14,6 @@ import { workspaceEventsMigration } from "./workspace-events.js";
 
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   officeLayoutMigration,
-  actorVaultsMigration,
   conversationSettingsMigration,
   workspaceEventsMigration,
   sandboxContainersMigration,
@@ -95,24 +92,12 @@ export async function runMigrations(
   return ran;
 }
 
-function sandboxSpec(sandbox: SandboxConfig): string {
-  switch (sandbox.type) {
-    case "host":
-      return "host";
-    case "container":
-      return `container:${sandbox.container}`;
-    case "oci":
-      return `oci:${sandbox.image}`;
-  }
-}
-
 export function formatPendingMigrations(options: {
   pending: readonly Migration[];
   workspaceRoot: string;
-  sandbox: SandboxConfig;
 }): string {
-  const { pending, workspaceRoot, sandbox } = options;
-  const command = `mikan migrate --workspace ${workspaceRoot} --sandbox ${sandboxSpec(sandbox)}`;
+  const { pending, workspaceRoot } = options;
+  const command = `mikan migrate --workspace ${workspaceRoot}`;
   return [
     "State needs migration before mikan can start:",
     ...pending.map((migration) => `  - ${migration.id}: ${migration.summary}`),

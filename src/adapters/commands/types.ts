@@ -3,7 +3,6 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 
 import type { Workspace } from "../../office/types.js";
 import type { DockerContainerManager } from "../../sandbox/provisioner.js";
-import type { SandboxConfig } from "../../sandbox/types.js";
 import type {
   ConversationContext,
   CompactOutcome,
@@ -69,7 +68,6 @@ interface CommandRuntimeBridge extends RunnerCacheControl {
 export interface CommandServices {
   workspace: Workspace;
   runtime?: CommandRuntimeBridge;
-  sandbox: SandboxConfig;
   vaultManager: VaultManager;
   provisioner?: DockerContainerManager;
   linkTokenStore: LinkTokenStoreLike;

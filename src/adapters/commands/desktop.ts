@@ -20,11 +20,9 @@ export class DesktopCommandHandler implements CommandHandler {
       return true;
     }
 
-    const { sandbox, openDesktop, desktopTokenStore, portalBaseUrl } = context.services;
-    if (sandbox.type !== "oci" || !openDesktop) {
-      await replySummaryPrivately(context, TITLE, [
-        "The desktop runs in a sandbox that mikan manages; start mikan with --sandbox=oci to use it.",
-      ]);
+    const { openDesktop, desktopTokenStore, portalBaseUrl } = context.services;
+    if (!openDesktop) {
+      await replySummaryPrivately(context, TITLE, ["The desktop is not configured on the server."]);
       return true;
     }
     if (!portalBaseUrl || !desktopTokenStore) {

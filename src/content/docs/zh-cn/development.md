@@ -69,7 +69,7 @@ npm run test:office:docker
 
 ```bash
 HOME="$HOME/mikan-dev" ./dist/main.js onboard
-HOME="$HOME/mikan-dev" ./dist/main.js --sandbox=host /path/to/workspace
+HOME="$HOME/mikan-dev" ./dist/main.js --sandbox=oci /path/to/workspace
 ```
 
 正常 bot 模式仍至少需要一套完整的平台凭证。

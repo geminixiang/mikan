@@ -35,7 +35,6 @@ function context(dryRun = false): MigrationContext {
     dryRun,
     owners: new Map(),
     enabledPlatforms: ["slack"],
-    sandbox: { type: "host" },
     piAgentDir: join(stateDir, "pi"),
     modelsPath: join(stateDir, "models.json"),
     docker: async () => "",

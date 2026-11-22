@@ -9,10 +9,10 @@ description: 起動、グローバルおよび会話設定、プラットフォ�
 
 ```bash
 mikan onboard
-mikan --sandbox=host /path/to/workspace
+mikan --sandbox=oci /path/to/workspace
 ```
 
-存在しない state directory は mode `0700` で作成されます。既存 directory は現在のユーザーが所有し、world-writable でないことが必要です。sandbox mode では、tools が認証情報や管理者設定へアクセスできないよう、workspace の外に置いてください。
+存在しない state directory は mode `0700` で作成されます。既存 directory は現在のユーザーが所有し、world-writable でないことが必要です。tools が認証情報や管理者設定へアクセスできないよう、workspace の外に置いてください。
 
 ## 設定の場所
 
@@ -72,8 +72,6 @@ conversation を生のプラットフォーム id 配下に保存していたリ
 Slack auto-reply は `/pi-auto-reply on|off|jev` で変更し、conversation office の `auto-reply`（on）または `auto-reply.jev`（jev）marker file に保存します。`off` は両方を削除します。Marker の内容は無視されます。`on` は channel 内の mikan 宛てでない human message すべてに応答し、`jev` は message ごとに mikan 宛てかどうかを Jev が判断します。廃止済みの `autoReply` と `llm.autoReply` JSON 設定は無視され、daemon は起動時にそれらを表示するので削除できます。
 
 Office visibility は Slack の conversation type に従います（ADR 0008）。Telegram、Discord、GitHub の conversation は常に private です。public channel は **public** office です。他のすべての office が `/workspace/public/<office key>` で読み取り専用に参照でき、workspace 全体の `MEMORY.md` と `skills/` に書き込めます。private channel、DM、group DM、外部共有 channel、および種別が未観測の conversation は **private** office です。自分自身にだけ見え、共有知識と public office を読めますが書き戻しません。すべての office は同じ mount 形状を持ち、workspace root を mount する layout はありません。
-
-visibility を強制できるのは `oci:*` だけです。`host`、`container:*` はすべての office を一つの filesystem で動かす trusted deployment であり、そこでの private office は一度だけ警告を記録して通常どおり動作します。
 
 廃止された door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`、および legacy の `sandbox.image.workspaceMount`）は、存在しても無視され、projection を変えることはありません。office が別の private office に到達できるようにする設定はありません。
 
@@ -142,15 +140,15 @@ OpenConnector は deployment default を持つ通常の MCP server です。`OPE
 
 ## CLI リファレンス
 
-| コマンドまたはオプション                                               | 用途                                                                                                    |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `mikan onboard`                                                        | 必須のグローバル設定ファイルを作成                                                                      |
-| `mikan [--sandbox=<mode>] [working-directory]`                         | 設定済みの platform bots を起動。working directory の既定値は `~/.mikan/workspace`                      |
-| `mikan env`                                                            | 環境変数の完全なインベントリと、現在設定されている内容を表示                                            |
-| `mikan --version`                                                      | インストール済み version を表示                                                                         |
-| `mikan --help`                                                         | CLI の使い方と platform-token のサマリーを表示                                                          |
-| `mikan office list`                                                    | 各 office key とそのプラットフォーム・conversation id を一覧表示                                        |
-| `mikan migrate --sandbox=<mode> [--dry-run] [--owner <id>=<platform>]` | daemon を停止した状態で未適用の [State マイグレーション](/ja/deployment/#state-マイグレーション) を適用 |
+| コマンドまたはオプション                              | 用途                                                                                                    |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `mikan onboard`                                       | 必須のグローバル設定ファイルを作成                                                                      |
+| `mikan [--sandbox=<spec>] [working-directory]`        | 設定済みの platform bots を起動。working directory の既定値は `~/.mikan/workspace`                      |
+| `mikan env`                                           | 環境変数の完全なインベントリと、現在設定されている内容を表示                                            |
+| `mikan --version`                                     | インストール済み version を表示                                                                         |
+| `mikan --help`                                        | CLI の使い方と platform-token のサマリーを表示                                                          |
+| `mikan office list`                                   | 各 office key とそのプラットフォーム・conversation id を一覧表示                                        |
+| `mikan migrate [--dry-run] [--owner <id>=<platform>]` | daemon を停止した状態で未適用の [State マイグレーション](/ja/deployment/#state-マイグレーション) を適用 |
 
 `mikan migrate` は `--workspace <dir>` を受け付け、既定値は `~/.mikan/workspace` です。
 

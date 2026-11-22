@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 import { envSummaryLines } from "../env-manifest.js";
-import { parseSandboxArg } from "../sandbox/registry.js";
+import { parseSandboxArg, PUBLISHED_SANDBOX_SPEC } from "../sandbox/registry.js";
 import type { BootPlan } from "./types.js";
 import { cliCommand, nonEmptyValue, stateDirPath } from "./arg-grammar.js";
 
@@ -18,7 +18,7 @@ function bootCommand() {
     .description("Multi-platform chat agent daemon")
     .helpOption(false)
     .argument("[working-directory...]", "Workspace directory (default: ~/.mikan/workspace)")
-    .option("--sandbox <spec>", "host | container:<name> | oci | oci:<image[:tag]>", nonEmptyValue)
+    .option("--sandbox <spec>", "oci | oci:<image[:tag]> (default: oci)", nonEmptyValue)
     .option("--onboard", "Interactive first-run setup (also: mikan onboard)")
     .option("-v, --version", "Print version")
     .option("-V", "Print version")
@@ -41,7 +41,7 @@ export function resolveBoot(args: string[] = process.argv.slice(2)): BootPlan {
     stateDir,
     workingDir: workingDirArg ? resolve(workingDirArg) : join(stateDir, "workspace"),
     workingDirExplicit: workingDirArg !== undefined,
-    sandbox: sandboxArg === undefined ? { type: "host" } : parseSandboxArg(sandboxArg),
+    sandbox: parseSandboxArg(sandboxArg ?? PUBLISHED_SANDBOX_SPEC),
   };
 }
 
@@ -57,7 +57,7 @@ function subcommandPlan(args: string[]): BootPlan | undefined {
     stateDir,
     workingDir: join(stateDir, "workspace"),
     workingDirExplicit: false,
-    sandbox: { type: "host" },
+    sandbox: parseSandboxArg(PUBLISHED_SANDBOX_SPEC),
   };
 }
 
@@ -73,7 +73,7 @@ export function helpText(): string {
     bootCommand().helpInformation() +
     `
 Commands:
-  mikan migrate --sandbox <spec> [--dry-run]  Apply pending state migrations (stop the daemon first).
+  mikan migrate [--dry-run]  Apply pending state migrations (stop the daemon first).
   mikan office list          List office keys with their platform and conversation id.
   mikan env                  Show environment-variable inventory.
   mikan slack token          Store a Slack configuration token; mikan then keeps the Slack app configured.

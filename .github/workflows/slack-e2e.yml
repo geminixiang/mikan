@@ -60,6 +60,10 @@ jobs:
             s.llm = { ...s.llm, ...model, thinkingLevel: "off" };
             fs.writeFileSync(p, JSON.stringify(s, null, 2));
           ' "$STATE_DIR/settings.json"
+          # The daemon runs each office in the published sandbox image. Pull it
+          # first: the first tool call would otherwise wait on the pull and
+          # outlast the reply timeout.
+          docker pull -q "$(node -e 'import("./dist/sandbox/published-image.js").then((m) => console.log(m.publishedSandboxImage()))')"
           HOME="$MIKAN_HOME" node dist/main.js "$WORKING_DIR" >"$LOG_FILE" 2>&1 &
           MIKAN_PID=$!
 

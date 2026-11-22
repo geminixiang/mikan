@@ -15,7 +15,6 @@ import type {
 import { MikanModels } from "../harness/models.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
-import type { SandboxConfig } from "../sandbox/types.js";
 import { runtimeServices } from "./runtime-services.js";
 import { localRunnerFactory } from "./local-execution.js";
 
@@ -147,10 +146,8 @@ describe("queued message provider context", () => {
   test("the queued turn's last provider-facing user message is the queued one", async () => {
     const { models, faux } = createFauxModels();
     const workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
-    const sandbox: SandboxConfig = { type: "host" };
     const runtime = createConversationRuntime({
       workspace,
-      sandbox,
       models,
       ...runtimeServices(workspace.stateDir),
       runnerFactory: localRunnerFactory,

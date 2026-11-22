@@ -323,19 +323,14 @@ describe("isRecord", () => {
 
 describe("assertStateDirOutsideWorkspace", () => {
   test("throws under sandboxed modes when state dir is inside the working dir", () => {
-    expect(() => assertStateDirOutsideWorkspace("/work/.mikan", "/work", "image")).toThrow(
+    expect(() => assertStateDirOutsideWorkspace("/work/.mikan", "/work")).toThrow(
       /must not be inside the working directory/,
     );
-    expect(() => assertStateDirOutsideWorkspace("/work", "/work", "image")).toThrow();
-    expect(() => assertStateDirOutsideWorkspace("/work/.mikan", "/work", "container")).toThrow();
+    expect(() => assertStateDirOutsideWorkspace("/work", "/work")).toThrow();
   });
 
   test("containment is lexical and slash-aware", () => {
-    expect(() => assertStateDirOutsideWorkspace("/work-state", "/work", "image")).not.toThrow();
-    expect(() => assertStateDirOutsideWorkspace("/elsewhere", "/work", "image")).not.toThrow();
-  });
-
-  test("host mode only warns", () => {
-    expect(() => assertStateDirOutsideWorkspace("/work/.mikan", "/work", "host")).not.toThrow();
+    expect(() => assertStateDirOutsideWorkspace("/work-state", "/work")).not.toThrow();
+    expect(() => assertStateDirOutsideWorkspace("/elsewhere", "/work")).not.toThrow();
   });
 });

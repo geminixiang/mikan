@@ -491,7 +491,6 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   ): Promise<PiAgentWrapper> {
     const runnerFactory = this.options.runnerFactory ?? createRunner;
     return runnerFactory({
-      sandboxConfig: this.options.sandbox,
       sessionKey: options.sessionKey,
       office: this.options.workspace.office(options.address),
       trustModel: options.trustModel,

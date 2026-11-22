@@ -10,7 +10,7 @@ import type {
 } from "@earendil-works/pi-ai";
 import type { ConversationResponder, MessagingInfo } from "../types.js";
 import type { resolveConversationSettings } from "../settings/index.js";
-import type { RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
+import type { RuntimePathContext } from "../sandbox/types.js";
 import type { WorkspaceProjection, Office } from "../office/types.js";
 
 import type { JsonValue } from "@earendil-works/chord/json";
@@ -37,7 +37,6 @@ export interface BuildSystemPromptOptions {
   workspacePath: string;
   office: Office;
   memory: string;
-  sandboxConfig: SandboxConfig;
   platform: MessagingInfo;
   skills: MikanSkill[];
   projection: WorkspaceProjection;
@@ -96,7 +95,6 @@ export interface UsageReportContext {
 
 export interface RunnerExecutionContext {
   env(): ExecutionEnv | undefined;
-  sandboxConfig(): SandboxConfig;
   resolveForRun(context: {
     address: OfficeAddress;
     userId: string;

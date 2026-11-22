@@ -1,6 +1,6 @@
 ---
 title: Vault
-description: How mikan stores credentials in the state directory and injects env or file mounts by sandbox mode.
+description: How mikan stores credentials in the state directory and injects env and file mounts into the sandbox.
 ---
 
 ## State directory and vault location
@@ -69,17 +69,7 @@ This is a data boundary, not an execution boundary. Anything the conversation's 
 
 ## Sandbox behavior
 
-| Sandbox mode       | Vault env injection | File credentials        | Vault key                       |
-| ------------------ | ------------------- | ----------------------- | ------------------------------- |
-| `host`             | not injected        | refused                 | derived from the platform user  |
-| `container:<name>` | injected            | refused                 | derived from the container name |
-| `oci:<image>`      | injected            | projected (bind mounts) | the office key                  |
-
-**Refused means the run fails, not that the file is quietly ignored.** A vault whose directory holds
-any file other than `env` resolves to a file mount, and a mode that cannot mount files raises
-`Sandbox type "<type>" does not support vault file mounts` instead of running with an incomplete
-credential set. So on those modes, keep credentials in `env` only — a stray `gws.json` left in the
-vault from an earlier `oci` deployment will stop the conversation from running.
+mikan injects the vault's `env` entries into the office's container and projects its credential files there as bind mounts. The vault key is the office key.
 
 The office key is derived by hashing the platform name together with the platform's raw conversation id, so two platforms that share a raw id cannot resolve each other's credentials. `mikan migrate` renames 0.5.3 vault directories to office keys; if both directories exist, it stops for a manual merge instead of picking one.
 

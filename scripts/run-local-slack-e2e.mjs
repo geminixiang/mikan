@@ -83,7 +83,7 @@ function launch(args, log) {
   });
   return { child, exited };
 }
-const daemon = launch(["dist/main.js", join(base, "workspace"), "--sandbox", "host"], "daemon.log");
+const daemon = launch(["dist/main.js", join(base, "workspace"), "--sandbox", "oci"], "daemon.log");
 let tests;
 const stop = () => {
   tests?.child.kill("SIGTERM");

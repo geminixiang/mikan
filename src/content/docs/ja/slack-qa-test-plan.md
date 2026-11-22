@@ -80,7 +80,7 @@ npm run test:e2e:slack
 
 ### Office visibility とテスト用 daemon
 
-この suite は実際の mikan daemon を駆動します。office visibility は Slack の conversation type に従い、DM scenario は private office として動きます。host mode の QA daemon はその visibility を強制できませんが、private office をそのまま提供し、office ごとに一度警告を記録します。設定の上書きは不要です。これは使い捨ての single-tenant QA runner にのみ適切であり、それ以外の場所では適切ではありません。
+この suite は実際の mikan daemon を駆動します。office visibility は Slack の conversation type に従い、DM scenario は private office として動きます。設定の上書きは不要です。
 
 QA user token は、テスト channel への投稿、channel history/replies の読み取り、S-009 のファイルアップロードが可能である必要があります。DM scenario ではさらに人間ユーザーの身分（`auth.test` に `bot_id` なし）が必要です：mikan は設計上 bot からの DM に応答しないため、bot 身分の token では S-017/S-018 は設定エラーとして即座に fail します。`deploy/examples/slack-app-manifest.e2e.json` の E2E manifest にはこれらの必要な user scopes が含まれています。通常の `deploy/examples/slack-app-manifest.json` には含まれていません。
 

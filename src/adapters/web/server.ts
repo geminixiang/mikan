@@ -8,7 +8,6 @@ import {
 import type { MessagingBot, PlatformName } from "../../types.js";
 import { resolveLinkBaseUrl } from "../../env-manifest.js";
 import * as log from "../../log.js";
-import type { SandboxConfig } from "../../sandbox/types.js";
 import { OfficeEventStore, type EventScheduleSink } from "../../events/index.js";
 import type { VaultManager } from "../../vault/types.js";
 import { handleAdminRequest } from "./admin/portal.js";
@@ -38,7 +37,6 @@ interface StartWebServerOptions {
     adminTokenStore: InMemoryAdminTokenStore;
     workspace: Workspace;
     runtime?: AdminRuntimeBridge;
-    sandbox?: SandboxConfig;
     botsByPlatform?: Partial<Record<PlatformName, MessagingBot>>;
     eventScheduler?: () => EventScheduleSink | undefined;
   };
@@ -85,7 +83,6 @@ export function startWebServer(options: StartWebServerOptions): Server {
           workspace: adminOptions.workspace,
           eventStore: adminEventStore,
           runtime: adminOptions.runtime,
-          sandbox: adminOptions.sandbox,
           botsByPlatform: adminOptions.botsByPlatform,
         }))
       ) {

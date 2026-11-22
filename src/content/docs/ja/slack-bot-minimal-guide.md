@@ -107,21 +107,8 @@ mikan の state は常に `~/.mikan` に置かれ、working directory は既定�
 
 Bot は DM で応答し、channel では mention されたときに応答します。起動された Slack thread の作業は、thread timestamp を key に含む隔離された session を使います。共有 channel の thread にある通常の mention なしの reply は記録されますが、実行を開始しません。
 
-## 9. sandbox を選ぶ
+## 9. Sandbox
 
-`--sandbox` を指定しない場合、mikan は tools を host 上で直接実行します。Office visibility は
-Slack の conversation type に従います。public channel は共有の `MEMORY.md` と `skills/` に書き込める
-public office であり、private channel と DM はそれらを読むだけで、他のどの office からも読まれない private
-office です。Host mode は private office を強制できず、一度だけ警告を記録してそのまま実行します。最初の実運用の会話を始める前に、どちらかを選んでください：
+mikan は conversation ごとに専用の container で tools を実行します。`--sandbox` を指定しない場合は `oci`、つまりインストールされている mikan のバージョン用に公開されたイメージを使うため、host に nerdctl、Podman、Docker のいずれかが必要です。Office visibility は Slack の conversation type に従います。public channel は共有の `MEMORY.md` と `skills/` に書き込める public office であり、private channel と DM はそれらを読むだけで、他のどの office からも読まれない private office です。sandbox は設定を変更せずにこれを強制します。
 
-- **推奨。** 管理型 sandbox を使います。conversation ごとに専用の container が与えられ、設定を変更
-  せずに office visibility を強制できます：
-
-  ```bash
-  mikan --sandbox=oci
-  ```
-
-- **Host mode** は、workspace 全体を任せられる、すでに信頼しているマシンでのみ使用してください。
-  DM や private channel を含むすべての conversation が、他のすべての conversation の files を読めます。
-
-完全な比較は [Sandbox](/ja/sandbox/) を参照してください。
+詳細は [Sandbox](/ja/sandbox/) を参照してください。

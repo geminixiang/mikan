@@ -1,24 +1,10 @@
 import type { Readable, Writable } from "node:stream";
-import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
-import type { OfficeAddress } from "../types.js";
 
-export type SandboxConfig = HostSandboxConfig | ContainerSandboxConfig | OciSandboxConfig;
-
-export interface HostSandboxConfig {
-  type: "host";
-}
-
-export interface ContainerSandboxConfig {
-  type: "container";
-  container: string;
-}
-
-export interface OciSandboxConfig {
-  type: "oci";
+export interface SandboxConfig {
   image: string;
 }
 
-export interface SandboxEnvOptions {
+interface SandboxEnvOptions {
   cwd: string;
   env?: Record<string, string>;
   ensureReady?: () => Promise<void>;
@@ -37,29 +23,6 @@ export interface RuntimePathContext {
 }
 
 export type DockerExecFile = (file: string, args: string[]) => Promise<{ stdout: string }>;
-
-export interface SandboxCredentialCapabilities {
-  env: boolean;
-  fileMounts: boolean;
-}
-
-export interface CredentialScope {
-  userId: string;
-  address: OfficeAddress;
-}
-
-interface SandboxWorkspaceCapabilities {
-  managedProjection: boolean;
-}
-
-export interface SandboxAdapter<TConfig extends SandboxConfig = SandboxConfig> {
-  type: TConfig["type"];
-  credentials: SandboxCredentialCapabilities;
-  workspace: SandboxWorkspaceCapabilities;
-  parse(value: string): TConfig | undefined;
-  validate?(config: TConfig): Promise<void>;
-  createEnv?(config: TConfig, options: SandboxEnvOptions): ExecutionEnv;
-}
 
 export type DesktopStart = "ready" | "outdated-image" | "stopped";
 

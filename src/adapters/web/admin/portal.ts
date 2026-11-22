@@ -75,7 +75,6 @@ import {
   renderStatusPage,
 } from "../portal-shell.js";
 import { PRODUCT_NAME } from "../../messages.js";
-import { credentialAuthorizationKey } from "../../../sandbox/identity.js";
 import { resolveWorkspaceProjection } from "../../../office/projection.js";
 import { sharedVaultKey } from "../../../vault/index.js";
 import { modelKey, resolveAdminModelAccessStatuses } from "./provider-models.js";
@@ -757,10 +756,6 @@ function serveConversationLoginLink(
     jsonRes(res, 503, { error: "Portal URL not configured." });
     return;
   }
-  if (!services.sandbox) {
-    jsonRes(res, 503, { error: "Sandbox config not available." });
-    return;
-  }
   const sharedName = typeof body.sharedVault === "string" ? body.sharedVault.trim() : "";
   let vaultId: string;
   if (sharedName) {
@@ -771,15 +766,7 @@ function serveConversationLoginLink(
     }
     vaultId = key;
   } else {
-    try {
-      vaultId = credentialAuthorizationKey(services.sandbox, {
-        userId: token.platformUserId,
-        address: office.address,
-      });
-    } catch (err) {
-      jsonRes(res, 500, { error: errorMessage(err) });
-      return;
-    }
+    vaultId = office.key;
   }
   try {
     const { token: linkToken } = services.linkTokenStore.create(

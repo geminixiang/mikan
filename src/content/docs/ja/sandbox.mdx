@@ -2,17 +2,11 @@
 title: Sandbox
 ---
 
-import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/components";
+import { Aside, LinkCard } from "@astrojs/starlight/components";
 
-<CardGrid>
-  <Card title="ローカル開発" icon="setting">
-    `host` は設定が最小で、vault env を注入しません。すべての office が一つの filesystem を共有するため、
-    private office の visibility を強制できない trusted deployment です。
-  </Card>
-  <Card title="主流の隔離" icon="rocket">
-    `oci:<image>` は mikan が lifecycle、workspace mount、vault env、リソース制限を管理します。
-  </Card>
-</CardGrid>
+mikan の sandbox は `oci` の 1 種類です。mikan は conversation office ごとに container を 1 つ作成して管理し、その office の workspace mount、vault の env とファイル、リソース制限を与えます。`--sandbox=oci` はインストールされている mikan のバージョン用に公開されたイメージを、`--sandbox=oci:<image>` は別のイメージを使います。`--sandbox` を指定しない場合は `oci` になります。host でコンテナエンジン（nerdctl、Podman、Docker のいずれか）が使える必要があります。
+
+1 つの conversation は vault を 1 つ、container を 1 つ持ちます。vault の名前は office key です。office key は、workspace 配下でその conversation の directory も命名する、バージョン付きの `v1-<platform>-<readable-id>-<hash>` セグメントです。[Conversation office](#conversation-office) を参照してください。
 
 <Aside type="note" title="sandbox の位置づけ">
   `oci:*` は 1 台の VM を共有するチーム向けです。office
@@ -23,20 +17,9 @@ import { Aside, Badge, Card, CardGrid, LinkCard } from "@astrojs/starlight/compo
 </Aside>
 
 <Aside type="caution" title="モード名">
-  `docker:*` は利用可能なモードではありません。`container:*` または `oci:*` を使ってください。
+  `host`、`container:<name>`、`docker:*` は sandbox のモードではなく、mikan は起動時に拒否します。
+  `oci` または `oci:<image>` を使ってください。
 </Aside>
-
-## 対応モード
-
-| モード             | 実行場所                   | Vault env injection | Vault key                        | 備考                                                                                  |
-| ------------------ | -------------------------- | ------------------- | -------------------------------- | ------------------------------------------------------------------------------------- |
-| `host`             | ホストマシン               | 注入しない          | プラットフォームの user から導出 | ローカル開発専用。office visibility を強制できない                                    |
-| `container:<name>` | 既存 Docker container      | 注入                | container 名から導出             | one container one vault。複数人が同じ container を共有すると、その vault も共有します |
-| `oci:<image>`      | mikan 管理の OCI container | 注入                | office key                       | 現在もっとも推奨される隔離モード。`1 conversation = 1 vault = 1 container`            |
-
-office key は、workspace 配下でその conversation の directory も命名する、バージョン付きの
-`v1-<platform>-<readable-id>-<hash>` セグメントです。[Conversation office](#conversation-office) を
-参照してください。
 
 ## Conversation office
 
@@ -52,58 +35,22 @@ runtime が workspace のどの部分を見るかは、その office の **visib
 | `MEMORY.md`、`skills/` — 共有知識               | 読み書き      | 読み取り専用   |
 | `public/<office-key>/` — すべての public office | 読み取り専用  | 読み取り専用   |
 
-workspace root を mount する layout はありません。admin portal で public channel を private に狭められますが、Slack の設定より広げることはできません。visibility を強制できるのは `oci:*` だけです。他のモードは `managedProjection: false` を報告し、private office を一度だけ警告を記録して通常どおり動かします。フィールドの意味と廃止された door policy 設定は [設定](/ja/configuration/) を参照してください。
+workspace root を mount する layout はありません。admin portal で public channel を private に狭められますが、Slack の設定より広げることはできません。フィールドの意味と廃止された door policy 設定は [設定](/ja/configuration/) を参照してください。
 
 <Aside type="caution" title="visibility は追加の sandbox ではありません">
-  visibility が決めるのは、どの host directory が runtime に投影されるかです。実行の境界では
-  ありません。`host` mode は office の visibility
-  にかかわらず、ファイルシステムやプロセスの隔離なしに host 上で直接ツールを実行します。
+  visibility が決めるのは、どの host directory が runtime に投影されるかです。実行の隔離は
+  変わりません。どの office も、visibility にかかわらず自分の container の中で動きます。
 </Aside>
 
 ### 生 id 配置からのアップグレード
 
 0.5.3 の workspace は生の conversation id で directory を命名しています。`mikan migrate` がそれらを vault、設定、session、event とあわせて office layout へ移動します。[0.5.3 からのアップグレード](/ja/deployment/#053-からのアップグレード)を参照してください。
 
-## 各モードのドキュメント
+## 関連ページ
 
-<LinkCard
-  title="Host sandbox"
-  description="ホストマシンで直接ツールを実行します。ローカル開発に最適です。"
-  href="host/"
-/>
-<LinkCard
-  title="Container sandbox"
-  description="既存の Docker container に接続し、ユーザー管理の lifecycle をそのまま使います。"
-  href="container/"
-/>
 <LinkCard
   title="OCI sandbox"
-  description="mikan が per-conversation container とリソース制限を管理します。"
-  href="image/"
+  description="イメージ、コンテナエンジン、アップグレード、リソース制限。"
+  href="oci/"
 />
-<LinkCard />
-<LinkCard />
-
-## 機能差分
-
-`oci:<image>` <Badge text="推奨" variant="success" /> は現在の主要開発および推奨 sandbox モードです。他のモードはローカル開発、互換、または実験用途として残されており、一部機能は補完されません。
-
-| ------------------------------------ | ------------ | ------------------- | --------------- | --------------------- | ------------------- | -------------- |
-| command 実行 | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| mikan 管理の runtime lifecycle | 対象外 | ❌ | ✅ | ✅ mikan process 所有 | ❌ | ❌ |
-| per-conversation container / runtime | ❌ | ❌ | ✅ | ✅ | 自分で管理 | bridge 派生 id |
-| per-conversation vault env | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ |
-| vault file 自動投影 / bind mount | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| workspace 自動マウント | host | 自分で mount が必要 | ✅ | ✅ | 自分で mount が必要 | ❌ |
-| office visibility の強制 | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| idle auto-stop / recreate | 対象外 | ❌ | ✅ | ✅ | ❌ | ❌ |
-| CPU / memory default limits | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| agent `sandbox` tool 設定 limits | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ |
-| 推奨度 | ローカル開発 | legacy / 互換 | 主流 | preview | alpha | 構築中 |
-
-上の ❌ の行の多くは、黙って機能を落とすのではなく拒否します。例外は office visibility で、強制できない
-モードは office ごとに一度 `Sandbox '<type>' cannot enforce private office visibility` を記録して
-続行します。これらのモードは定義上 trusted deployment だからです。vault file を mount
-できないモードは、認証情報なしで実行する代わりに
-`Sandbox type "<type>" does not support vault file mounts` を送出します。ファイルを投影できない
-モードでは、vault の認証情報は `env` のみに留めてください。
+<LinkCard title="Vault" description="認証情報の保存方法と、sandbox への届き方。" href="vault/" />

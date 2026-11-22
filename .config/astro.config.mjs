@@ -153,16 +153,6 @@ export default defineConfig({
                       link: "/sandbox/",
                     },
                     {
-                      label: "Host",
-                      translations: { "zh-TW": "Host", "zh-CN": "Host", ja: "Host" },
-                      link: "/sandbox/host/",
-                    },
-                    {
-                      label: "Container",
-                      translations: { "zh-TW": "Container", "zh-CN": "Container", ja: "Container" },
-                      link: "/sandbox/container/",
-                    },
-                    {
                       label: "OCI",
                       translations: { "zh-TW": "OCI", "zh-CN": "OCI", ja: "OCI" },
                       link: "/sandbox/oci/",

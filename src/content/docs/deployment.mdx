@@ -25,7 +25,7 @@ import { Aside, Card, CardGrid, Steps } from "@astrojs/starlight/components";
 - Node.js `>=24.15.0`
 - at least one complete Slack, Telegram, Discord, or GitHub credential set
 - a persistent `~/.mikan` for the PM2 user, where mikan keeps its state; the working directory defaults to `~/.mikan/workspace`
-- A container engine available to the PM2 user when using `oci:*` or `container:*`: nerdctl, Podman, or Docker; mikan uses the first one running (see [OCI sandbox](/sandbox/oci/#container-engine))
+- A container engine available to the PM2 user: nerdctl, Podman, or Docker; mikan uses the first one running (see [OCI sandbox](/sandbox/oci/#container-engine))
 
 The published `mikan-sandbox` image is a tool runtime, not a standalone mikan server image. PM2 runs `mikan` on the host; oci mode creates and manages containers through the host Docker daemon.
 
@@ -104,10 +104,11 @@ to start while one is pending and prints the exact `mikan migrate` command to ru
 files on its own. `~/.mikan/migrations.json` records which migrations have been applied.
 
 Check for pending migrations after installing a new version. `--dry-run` only reads, so it is safe
-while the daemon runs. Pass the same `--sandbox` and workspace the daemon uses:
+while the daemon runs. Pass `--workspace <dir>` when the daemon's working directory is not
+`~/.mikan/workspace`:
 
 ```bash
-mikan migrate --sandbox=oci:mikan-sandbox:latest --dry-run
+mikan migrate --dry-run
 ```
 
 If it prints `No pending migrations.`, reload as above. Otherwise stop the daemon, apply them, and
@@ -115,7 +116,7 @@ start it again:
 
 ```bash
 pm2 stop mikan
-mikan migrate --sandbox=oci:mikan-sandbox:latest
+mikan migrate
 pm2 start mikan
 ```
 
@@ -137,16 +138,16 @@ start and prints the `mikan migrate` command for your install.
 3. **Move state to `~/.mikan`.** 1.0 has no `--state-dir`; if 0.5.3 kept its state elsewhere,
    move that directory to `~/.mikan`, and remove `--state-dir` from the command line your process
    manager runs.
-4. **Choose a supported sandbox.** 1.0 runs `host`, `container:<name>`, and `oci:<image>`. A
-   0.5.3 install on `firecracker:*` or `cloudflare:*` must pick one of these first.
+4. **Use the `oci` sandbox.** mikan runs each office in a container it manages, so the host needs
+   nerdctl, Podman, or Docker. Start the daemon with `--sandbox=oci` or `--sandbox=oci:<image>`,
+   whichever sandbox 0.5.3 used.
 5. **Move provider keys.** Keys that 0.5.3 read from `~/.pi/mikan/auth.json` are not migrated;
    set them in `~/.mikan/mikan.env`, or keep them in `models.json`.
-6. **Migrate.** Pass the 0.5.3 working directory and the sandbox the daemon will run with,
-   preview, then apply:
+6. **Migrate.** Pass the 0.5.3 working directory, preview, then apply:
 
    ```bash
-   mikan migrate --workspace /srv/mikan --sandbox=oci:mikan-sandbox:latest --dry-run
-   mikan migrate --workspace /srv/mikan --sandbox=oci:mikan-sandbox:latest
+   mikan migrate --workspace /srv/mikan --dry-run
+   mikan migrate --workspace /srv/mikan
    ```
 
 7. **Start and check the log.** For each `settings.json`, the daemon logs
@@ -158,7 +159,6 @@ start and prints the `mikan migrate` command for your install.
 `mikan migrate`:
 
 - renames conversation directories and their vaults from raw conversation ids to office keys;
-- renames `host` per-user vaults and the `container:*` vault to hashed identity keys;
 - moves each conversation's `settings.json` into `~/.mikan/conversations/<office-key>/`;
 - imports each conversation's session files into its `sessions.db` and keeps the original files under `~/.mikan/conversations/<office-key>/sessions-v3/`;
 - moves `<workspace>/events/*.json` into each conversation's host-only event store;
@@ -168,6 +168,9 @@ start and prints the `mikan migrate` command for your install.
   when mikan does not have one yet;
 - removes `last_prompt.jsonl` and `auto-reply.disabled` from each conversation directory, since 1.0
   writes neither.
+
+Vaults that a `host` or `container:<name>` daemon wrote are left in place under `~/.mikan/vaults`
+and are no longer read.
 
 What people notice after the upgrade:
 
@@ -193,4 +196,4 @@ curl http://127.0.0.1:8181/health
 
 `/health` is a liveness check for the HTTP process only. It does not verify platform connections, Docker, sandbox provisioning, LLM providers, or event delivery, so do not use it as the only readiness signal.
 
-See the [maintained PM2 ecosystem file on GitHub](https://github.com/geminixiang/mikan/blob/main/deploy/pm2/ecosystem.config.cjs) and [Sandbox modes](/sandbox/) for mode-specific requirements.
+See the [maintained PM2 ecosystem file on GitHub](https://github.com/geminixiang/mikan/blob/main/deploy/pm2/ecosystem.config.cjs) and [Sandbox](/sandbox/) for sandbox requirements.

@@ -45,11 +45,11 @@ runtime 是協調者。平台不得知道 harness 的持久化細節，harness �
 | **Runtime/session**    | `src/runtime/`、`src/sessions/`                                          | Session-key 文法、per-session 序列化、chat/session 同步、runner lifecycle、stop/reset 與 shutdown                          | 交給 runner 的已驗證 event；交給 execution resolution 的 office 與 actor 輸入                    |
 | **Harness/tools**      | `src/harness/`、`src/harness/tools/`                                     | Model turn、execution resolution、預算、tool schema、skill 與 host capability 呼叫                                         | `ConversationResponder` 輸出與 `ExecutionEnv` 操作；不接收平台 SDK 物件                          |
 | **Scheduled events**   | `src/events/`                                                            | Event wire protocol、parser/builder、限定在單一 office 的 host store、檔名驗證與 scheduler lifecycle                       | 交給 harness/Web 的 `EventStore`；交給平台 messaging 的正規化 event                              |
-| **Sandbox/workspace**  | `src/sandbox/`                                                           | 執行環境實作、mount 拓撲、runtime/host 路徑 context、受管 container lifecycle 與檔案傳輸                                   | 宣告了路徑與憑證能力的 Pi `ExecutionEnv`                                                         |
-| **Vault/web/security** | `src/vault/`、`src/adapters/web/`、`src/sandbox/identity.ts`             | 憑證 identity 與注入 policy、僅限 host 的 portal/token 介面、mount 衝突檢查，以及安全敏感的授權決策                        | 交給 vault policy 的 actor/trust 輸入；憑證只交給選定的環境                                      |
+| **Sandbox/workspace**  | `src/sandbox/`                                                           | 執行環境實作、mount 拓撲、runtime/host 路徑 context、受管 container lifecycle 與檔案傳輸                                   | Pi `ExecutionEnv` 與其 runtime 路徑 context                                                      |
+| **Vault/web/security** | `src/vault/`、`src/adapters/web/`                                        | 憑證 identity 與注入 policy、僅限 host 的 portal/token 介面、mount 衝突檢查，以及安全敏感的授權決策                        | 交給 vault policy 的 actor/trust 輸入；憑證只交給選定的環境                                      |
 | **Config/CLI**         | `src/settings/`、`src/cli/`、`src/migrations/`、`src/adapters/commands/` | 啟動/flag 文法、設定持久化、state migration 與指令 manifest                                                                | 有效設定與確定性的指令清單                                                                       |
 
-一個對話的 harness instance 在 context 上與其他 instance 隔離，但這不是檔案系統或行程 sandbox。Sandbox 的執行環境改變的是工具在哪裡執行、拿到哪些 mount；`host` 模式，以及不受管的 `container:*` 模式，都不強制 office visibility。審查 seam 時請把這兩件事分開。
+一個對話的 harness instance 在 context 上與其他 instance 隔離，但這不是檔案系統或行程 sandbox。Sandbox 的執行環境決定工具在哪裡執行、拿到哪些 mount。審查 seam 時請把這兩件事分開。
 
 ### 跨歸屬 seam
 
@@ -206,25 +206,13 @@ Harness listener 會觀察 model/tool lifecycle event。預算設定會限制 to
 
 ### `SandboxConfig`
 
-這個 discriminated union 目前支援 `host`、`container` 與 `oci`。解析語法與成熟度記錄在 [Sandbox](/zh-tw/sandbox/)。
+`SandboxConfig` 是 oci 的設定：用來建立每個 office container 的映像。`--sandbox` 的語法記錄在 [Sandbox](/zh-tw/sandbox/)。
 
 ### `ExecutionEnv`
 
-執行邊界是 `@earendil-works/pi-durable/env` 的 Pi `ExecutionEnv`，Pi 自己的 `read`、`write`、`edit`、`bash` 工具就是針對這個介面寫的。mikan 不再加自己的介面：
+執行邊界是 `@earendil-works/pi-durable/env` 的 Pi `ExecutionEnv`，Pi 自己的 `read`、`write`、`edit`、`bash` 工具就是針對這個介面寫的。mikan 不再加自己的介面。actor/vault 解析先佈建 office 的 container，工具再透過 pi-env 的 `RemoteExecutionEnv`，經一條 `exec -i` 連線與 container 裡 Pi 的 `pi-env` daemon 溝通。
 
-| Sandbox     | 環境                                                                                              |
-| ----------- | ------------------------------------------------------------------------------------------------- |
-| `host`      | Pi 的 `NodeExecutionEnv`                                                                          |
-| `container` | pi-env 的 `RemoteExecutionEnv`，透過一條 `exec -i` 連線與 container 裡 Pi 的 `pi-env` daemon 溝通 |
-| `oci`       | 沒有直接的環境：actor/vault 解析先佈建 container，再使用它的 `container` 環境                     |
-
-每個環境都必須通過 Pi 的 `registerEnvConformance` 測試集；`src/test/container-execution-env.test.ts` 負責執行。工具實作呼叫環境的檔案操作，而非自建 `cat`、`printf` 或 quoting 協定。
-
-### `SandboxAdapter`
-
-Adapter 會辨識一個 CLI 值，選擇性地驗證它，並選擇性地建立環境。`oci` 刻意沒有直接的環境：actor/vault 解析會先佈建一個具體的 container。
-
-adapter 註冊是 `src/sandbox/registry.ts` 內部的封閉清單，套件不匯出 `SandboxAdapter`，也不匯出這份註冊表。
+這個環境必須通過 Pi 的 `registerEnvConformance` 測試集；`src/test/container-execution-env.test.ts` 負責執行。工具實作呼叫環境的檔案操作，而非自建 `cat`、`printf` 或 quoting 協定。
 
 ## 8. Vault 與 execution-resolution 介面
 
@@ -236,15 +224,15 @@ adapter 註冊是 `src/sandbox/registry.ts` 內部的封閉清單，套件不匯
 
 1. Runtime 提供平台信任、conversation、user 與 sandbox 拓撲。
 2. execution resolver 解析 Workspace projection，接著選出 actor/vault identity。
-3. `VaultManager` 解析 env 與 mount；collision 與 backend capability checks 驗證完整 grant。
+3. `VaultManager` 解析 env 與 mount；collision check 驗證完整 grant。
 4. 單一 execution decision 回傳 projection、runtime path context，以及只帶本次 run 所需憑證的執行環境。
 5. Prompt memory/skills 與 filesystem execution 使用同一份 decision，不再各自重算 authorization。
 
-Host sandbox 執行絕不會收到 vault injection。Open-trigger 平台絕不會收到環境式的 shared vault。這些是安全不變式，不是為了方便的預設值。
+Open-trigger 平台絕不會收到環境式的 shared vault。這是安全不變式，不是為了方便的預設值。
 
 ## 9. Office、session、chat 與 identity 介面
 
-來源：`src/office/*`、`src/sessions/*`、`src/adapters/shared.ts` 與 `src/sandbox/identity.ts`。
+來源：`src/office/*`、`src/sessions/*` 與 `src/adapters/shared.ts`。
 
 ### `Workspace` 與 `Office`
 
@@ -320,7 +308,7 @@ type EventFilePayload =
 | `~/.mikan/conversations/<officeKey>/sessions.db`   | session store         | 僅限 host 的 agent 歷史（pi-durable SQLite） |
 | `~/.mikan/conversations/<officeKey>/events/*.json` | event store           | 僅限 host 的排程 event                       |
 
-`MEMORY.md`、`skills`、`events` 與 `agents` 是 workspace root 的保留名稱（`RESERVED_WORKSPACE_NAMES`）；workspace root 底下其他每一個項目都是 office 目錄。對於以對話為範圍的 sandbox，`~/.mikan/vaults/` 底下以對話為範圍的 vault 目錄會以 office key 命名；`host` 模式以使用者為 key，`container` 模式則以 container 名稱為 key。
+`MEMORY.md`、`skills`、`events` 與 `agents` 是 workspace root 的保留名稱（`RESERVED_WORKSPACE_NAMES`）；workspace root 底下其他每一個項目都是 office 目錄。`~/.mikan/vaults/` 底下以對話為範圍的 vault 目錄會以 office key 命名。
 
 state directory 不得位於 sandbox 可見的 workspace 內。重要的狀態檔使用 atomic 私有寫入；append-only log 使用 append 語意。
 

@@ -17,20 +17,25 @@ describe("resolveBoot", () => {
       stateDir: HOME_STATE,
       workingDir: join(HOME_STATE, "workspace"),
       workingDirExplicit: false,
-      sandbox: { type: "host" },
     });
   });
 
+  test("no --sandbox flag runs the published sandbox image, like --sandbox=oci", () => {
+    const { sandbox } = resolveBoot([]);
+    expect(sandbox).toEqual(resolveBoot(["--sandbox=oci"]).sandbox);
+    expect(sandbox.image).toMatch(/^ghcr\.io\/geminixiang\/mikan-sandbox:/);
+  });
+
   test("positional working dir is resolved and marked explicit", () => {
-    const plan = resolveBoot(["--sandbox=host", "/tmp/mikan"]);
+    const plan = resolveBoot(["--sandbox=oci", "/tmp/mikan"]);
     expect(plan.mode).toBe("run");
     expect(plan.workingDir).toBe(resolve("/tmp/mikan"));
     expect(plan.workingDirExplicit).toBe(true);
   });
 
   test("--flag value and --flag=value forms are equivalent", () => {
-    const a = resolveBoot(["--sandbox", "container:dev"]);
-    const b = resolveBoot(["--sandbox=container:dev"]);
+    const a = resolveBoot(["--sandbox", "oci:acme/dev:1"]);
+    const b = resolveBoot(["--sandbox=oci:acme/dev:1"]);
     expect(a.sandbox).toEqual(b.sandbox);
   });
 
@@ -50,18 +55,14 @@ describe("resolveBoot", () => {
   );
 
   test("flag values are never taken as the positional working dir", () => {
-    const plan = resolveBoot(["--sandbox", "host"]);
+    const plan = resolveBoot(["--sandbox", "oci"]);
     expect(plan.workingDirExplicit).toBe(false);
     expect(plan.mode).toBe("run");
   });
 
   test("--sandbox parses the sandbox DSL", () => {
-    expect(resolveBoot(["--sandbox=container:dev"]).sandbox).toMatchObject({
-      type: "container",
-      container: "dev",
-    });
-    expect(resolveBoot(["--sandbox=oci:ghcr.io/x/y:latest"]).sandbox).toMatchObject({
-      type: "oci",
+    expect(resolveBoot(["--sandbox=oci:ghcr.io/x/y:latest"]).sandbox).toEqual({
+      image: "ghcr.io/x/y:latest",
     });
   });
 

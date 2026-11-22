@@ -107,16 +107,8 @@ mikan 的狀態固定放在 `~/.mikan`，working directory 預設為 `~/.mikan/w
 
 Bot 會在 DM 中回應，也會在 channel 中被 mention 時回應。觸發的 Slack thread 工作會使用隔離的 session，其 key 包含 thread timestamp。共享頻道 thread 中未 mention 的一般回覆會被記錄，但不會開始執行。
 
-## 9. 選擇一種 sandbox
+## 9. Sandbox
 
-不指定 `--sandbox` 時，mikan 會直接在宿主機上執行工具。Office visibility 會跟隨 Slack 對話類型：公開頻道是 public office，會寫入共用的 `MEMORY.md` 與 `skills/`；私密頻道與 DM 則是 private office，只會讀取它們，而且不會被其他任何 office 讀取。Host 模式無法強制 private office，會照常執行並記錄一次警告。請在第一次真正的對話之前先選好：
+mikan 讓每個對話在自己的 container 中執行工具。不指定 `--sandbox` 時使用 `oci`，也就是為目前安裝的 mikan 版本發佈的映像，所以宿主機需要 nerdctl、Podman 或 Docker。Office visibility 會跟隨 Slack 對話類型：公開頻道是 public office，會寫入共用的 `MEMORY.md` 與 `skills/`；私密頻道與 DM 則是 private office，只會讀取它們，而且不會被其他任何 office 讀取。Sandbox 會強制這一點，不必更動設定。
 
-- **建議做法。** 使用受管理的 sandbox，它會給每個對話自己的 container，而且不必更動設定就能強制 office visibility：
-
-  ```bash
-  mikan --sandbox=oci
-  ```
-
-- **Host 模式**，只適用於你已經信任其掌握整個 workspace 的機器：每個對話（包括 DM 與私密頻道）都能讀取其他所有對話的檔案。
-
-完整比較請見 [Sandbox](/zh-tw/sandbox/)。
+詳情請見 [Sandbox](/zh-tw/sandbox/)。

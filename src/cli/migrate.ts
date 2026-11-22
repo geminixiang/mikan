@@ -6,14 +6,13 @@ import { promisify } from "node:util";
 import { InvalidArgumentError } from "commander";
 import { platformIsActive, readEnv } from "../env-manifest.js";
 import { pendingMigrations, runMigrations } from "../migrations/index.js";
-import { parseSandboxArg } from "../sandbox/registry.js";
 import { containerEngine } from "../sandbox/engine.js";
 import { globalSettingsPath } from "../settings/index.js";
 import type { DockerCli } from "../migrations/types.js";
 import { assertPlatformName } from "../office/index.js";
 import type { PlatformName } from "../types.js";
 import { errorMessage } from "../unknown-values.js";
-import { cliCommand, commandExitCode, nonEmptyValue, stateDirPath } from "./arg-grammar.js";
+import { cliCommand, commandExitCode, stateDirPath } from "./arg-grammar.js";
 
 const PLATFORMS: readonly PlatformName[] = ["slack", "telegram", "discord", "github"];
 
@@ -50,7 +49,6 @@ function assertInstallPaths(stateDir: string, workspaceRoot: string): void {
 interface MigrateOptions {
   workspace?: string;
   dryRun?: boolean;
-  sandbox: string;
   owner: Map<string, PlatformName>;
 }
 
@@ -58,11 +56,7 @@ export async function runMigrateCommand(argv: string[], docker = dockerCli): Pro
   const command = cliCommand("mikan migrate")
     .description("Apply pending state migrations (stop the daemon first)")
     .option("--workspace <dir>", "Workspace directory (default: ~/.mikan/workspace)")
-    .requiredOption(
-      "--sandbox <spec>",
-      "The daemon's --sandbox value: host | container:<name> | oci:<image>",
-      nonEmptyValue,
-    )
+    .option("--sandbox <spec>", "Ignored; accepted so that older commands keep working")
     .option("--dry-run", "List what each pending migration would change, without writing")
     .option(
       "--owner <conversationId=platform>",
@@ -82,14 +76,12 @@ export async function runMigrateCommand(argv: string[], docker = dockerCli): Pro
     ? resolve(options.workspace)
     : join(stateDir, "workspace");
   try {
-    const sandbox = parseSandboxArg(options.sandbox);
     if (pendingMigrations(stateDir).length > 0) assertInstallPaths(stateDir, workspaceRoot);
     const ran = await runMigrations({
       workspaceRoot,
       stateDir,
       dryRun,
       owners: options.owner,
-      sandbox,
       enabledPlatforms: PLATFORMS.filter((platform) => platformIsActive(platform)),
       piAgentDir: readEnv("PI_CODING_AGENT_DIR") ?? join(homedir(), ".pi", "agent"),
       modelsPath: join(stateDir, "models.json"),

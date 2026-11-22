@@ -69,7 +69,7 @@ npm run test:office:docker
 
 ```bash
 HOME="$HOME/mikan-dev" ./dist/main.js onboard
-HOME="$HOME/mikan-dev" ./dist/main.js --sandbox=host /path/to/workspace
+HOME="$HOME/mikan-dev" ./dist/main.js --sandbox=oci /path/to/workspace
 ```
 
 通常の bot mode には、少なくとも 1 組の完全な platform credentials が必要です。

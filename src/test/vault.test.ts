@@ -13,7 +13,6 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { ActorExecutionResolver } from "../harness/execution-resolver.js";
 import { DockerContainerManager } from "../sandbox/provisioner.js";
 import { BACKGROUND_CONTEXT } from "@earendil-works/chord/context";
-import { credentialAuthorizationKey } from "../sandbox/identity.js";
 import { FileVaultManager, parseEnvFile, sharedVaultKey } from "../vault/index.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
 
@@ -380,22 +379,14 @@ describe("ActorExecutionResolver image mode", () => {
 
   test("uses platform-namespaced vault ids for new users", async () => {
     const mgr = new FileVaultManager(tmpDir);
-    const resolver = new ActorExecutionResolver(
-      { type: "oci", image: "ubuntu:24.04" },
-      mgr,
-      undefined,
-      workspace(),
-    );
+    const resolver = new ActorExecutionResolver(mgr, undefined, workspace());
 
     const decision = await resolver.resolve({
       userId: "U123",
       address: createOfficeAddress("slack", "D123"),
     });
 
-    expect(decision.sandboxConfig).toEqual({
-      type: "container",
-      container: `mikan-sandbox-${D123_OFFICE}`,
-    });
+    expect(decision.env.id).toBe(`container:mikan-sandbox-${D123_OFFICE}`);
     expect(mgr.resolve("d123")).toBeUndefined();
   });
 
@@ -411,7 +402,6 @@ describe("ActorExecutionResolver image mode", () => {
     );
 
     const resolver = new ActorExecutionResolver(
-      { type: "oci", image: "ubuntu:24.04" },
       new FileVaultManager(tmpDir),
       undefined,
       workspace(),
@@ -421,10 +411,7 @@ describe("ActorExecutionResolver image mode", () => {
       address: createOfficeAddress("slack", "D123"),
     });
 
-    expect(decision.sandboxConfig).toEqual({
-      type: "container",
-      container: `mikan-sandbox-${D123_OFFICE}`,
-    });
+    expect(decision.env.id).toBe(`container:mikan-sandbox-${D123_OFFICE}`);
     expect(
       readFileSync(
         join(vaultsDir, officeKey(createOfficeAddress("slack", "D123")), "env"),
@@ -445,12 +432,7 @@ describe("ActorExecutionResolver image mode", () => {
     );
 
     const mgr = new FileVaultManager(tmpDir);
-    const resolver = new ActorExecutionResolver(
-      { type: "oci", image: "ubuntu:24.04" },
-      mgr,
-      undefined,
-      workspace(),
-    );
+    const resolver = new ActorExecutionResolver(mgr, undefined, workspace());
     await resolver.resolve({
       userId: "alice",
       address: createOfficeAddress("github", "GH_octo_widgets_5"),
@@ -469,13 +451,7 @@ describe("ActorExecutionResolver image mode", () => {
   });
 
   test("does not copy the default shared vault over an existing image sandbox vault", async () => {
-    const vaultKey = credentialAuthorizationKey(
-      { type: "oci", image: "ubuntu:24.04" },
-      {
-        userId: "U123",
-        address: createOfficeAddress("slack", "D123"),
-      },
-    );
+    const vaultKey = officeKey(createOfficeAddress("slack", "D123"));
     mkdirSync(join(vaultsDir, "shared", "claw"), { recursive: true });
     mkdirSync(join(vaultsDir, vaultKey), { recursive: true });
     writeFileSync(join(vaultsDir, "shared", "claw", "env"), "A=shared\n");
@@ -489,7 +465,6 @@ describe("ActorExecutionResolver image mode", () => {
     );
 
     const resolver = new ActorExecutionResolver(
-      { type: "oci", image: "ubuntu:24.04" },
       new FileVaultManager(tmpDir),
       undefined,
       workspace(),
@@ -504,35 +479,8 @@ describe("ActorExecutionResolver image mode", () => {
     });
   });
 
-  test("login and execution use the same generated vault key in image mode", async () => {
-    const mgr = new FileVaultManager(tmpDir);
-    const baseConfig = { type: "oci", image: "ubuntu:24.04" } as const;
-    const vaultKey = credentialAuthorizationKey(baseConfig, {
-      userId: "U123",
-      address: createOfficeAddress("slack", "D123"),
-    });
-
-    const resolver = new ActorExecutionResolver(baseConfig, mgr, undefined, workspace());
-    const decision = await resolver.resolve({
-      userId: "U123",
-      address: createOfficeAddress("slack", "D123"),
-    });
-
-    expect(vaultKey).toBe(officeKey(createOfficeAddress("slack", "D123")));
-    expect(decision.sandboxConfig).toEqual({
-      type: "container",
-      container: `mikan-sandbox-${D123_OFFICE}`,
-    });
-  });
-
   test("provisions per-conversation container with inferred vault mounts", async () => {
-    const vaultKey = credentialAuthorizationKey(
-      { type: "oci", image: "ubuntu:24.04" },
-      {
-        userId: "U123",
-        address: createOfficeAddress("slack", "D123"),
-      },
-    );
+    const vaultKey = officeKey(createOfficeAddress("slack", "D123"));
     const userDir = join(vaultsDir, vaultKey);
     mkdirSync(join(userDir, ".ssh"), { recursive: true });
 
@@ -541,7 +489,6 @@ describe("ActorExecutionResolver image mode", () => {
       .fn<DockerContainerManager["provision"]>()
       .mockRejectedValue(new Error("provisioning stops the call before docker runs"));
     const resolver = new ActorExecutionResolver(
-      { type: "oci", image: "ubuntu:24.04" },
       mgr,
       { provision, markUsed: () => {} },
       workspace(),
@@ -579,7 +526,6 @@ describe("ActorExecutionResolver image mode", () => {
       .fn<DockerContainerManager["provision"]>()
       .mockRejectedValue(new Error("provisioning stops the call before docker runs"));
     const resolver = new ActorExecutionResolver(
-      { type: "oci", image: "ubuntu:24.04" },
       mgr,
       { provision, markUsed: () => {} },
       workspace(),

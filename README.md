@@ -57,7 +57,7 @@ That's it: `@mention` the bot in a channel or send it a DM. mikan pulls the sand
 
 Everything lives in `~/.mikan`: `settings.json` for behavior (model, sandbox limits, reply modes), `mikan.env` for secrets and platform tokens, and `ecosystem.config.cjs` for process supervision. To add another platform later, put its tokens in `mikan.env` and run `pm2 reload ~/.mikan/ecosystem.config.cjs` so pm2 rereads the file; `mikan env` lists every variable mikan reads.
 
-Upgrade with `npm i -g @geminixiang/mikan`, check `mikan migrate --sandbox=oci:<image> --dry-run` for pending State migrations, then `pm2 reload mikan`. See [the deployment guide](src/content/docs/deployment.mdx) for graceful shutdown and the health endpoint.
+Upgrade with `npm i -g @geminixiang/mikan`, check `mikan migrate --dry-run` for pending State migrations, then `pm2 reload mikan`. See [the deployment guide](src/content/docs/deployment.mdx) for graceful shutdown and the health endpoint.
 
 ## Platforms
 
@@ -70,9 +70,9 @@ Slack threads, Discord replies/threads, and Telegram reply chains are mapped to 
 
 ## Sandbox
 
-Use `oci:<image>`: mikan starts one container and one credential vault per conversation office, and enforces office visibility. `mikan onboard` sets it up.
+mikan runs tools in the `oci` sandbox: it starts one container and one credential vault per conversation office, and enforces office visibility. `mikan onboard` sets it up.
 
-`host` (run directly on the machine) and `container:<name>` (one shared, existing container) still work but are not recommended: they give the agent the whole machine or one shared filesystem, skip `/login` credential injection, and do not enforce office visibility.
+`host` (run directly on the machine) and `container:<name>` (one shared, existing container) were removed in 1.6.0; `oci` is the only sandbox, and mikan uses it when no `--sandbox` flag is given.
 
 Each office is **public** or **private**, following the Slack conversation type: public channels are public — every other office can read them (read-only, under `/workspace/public/`) and they may write the shared `MEMORY.md` and `skills/`. Private channels, DMs, group DMs, and externally shared channels are private — visible only to themselves, reading shared knowledge and public offices without writing back. Unknown conversation kinds are private. The admin portal can narrow a public channel; nothing can widen beyond Slack. Visibility governs data access only; execution isolation is unaffected.
 

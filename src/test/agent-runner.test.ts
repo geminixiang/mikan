@@ -20,7 +20,6 @@ import { RunEventHub } from "../harness/run-events.js";
 import { createSlackToolPack } from "../adapters/slack/tool-pack.js";
 import { loadScopeMcpServers } from "../settings/index.js";
 import { createRunner } from "../harness/runner.js";
-import * as log from "../log.js";
 import { loadSkillsFromDir } from "../harness/skills.js";
 import { MikanModels } from "../harness/models.js";
 import { SessionStore } from "../sessions/session-store.js";
@@ -31,6 +30,7 @@ import type { PlatformToolPackFactory } from "../harness/tools/types.js";
 import type { CreateRunnerOptions } from "../types.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { Office } from "../office/types.js";
+import { FileVaultManager } from "../vault/index.js";
 import { localExecution } from "./local-execution.js";
 
 let dir: string;
@@ -100,7 +100,7 @@ async function createTestRunner(
   const sessionKey = options.sessionKey ?? "C1";
 
   const runner = await createRunner({
-    sandboxConfig: { type: "host" },
+    vaultManager: new FileVaultManager(office.workspace.stateDir),
     execution: localExecution(office.workspace),
     sessionKey,
     office,
@@ -155,39 +155,6 @@ const platform: MessagingInfo = {
   users: [],
   trustModel: "membership",
 };
-
-describe("createRunner", () => {
-  test("warns once that host mode cannot enforce a private office", async () => {
-    const warn = vi.spyOn(log, "logWarning").mockImplementation(() => {});
-    const { models } = createFauxModels();
-    const office = createWorkspace({
-      root: join(dir, "workspace"),
-      stateDir: join(dir, "state"),
-    }).office(createOfficeAddress("slack", "CWARNPRIVATE"));
-    office.ensure();
-    const create = (sessionKey: string) =>
-      createRunner({
-        sandboxConfig: { type: "host" },
-        sessionKey,
-        office,
-        trustModel: "membership",
-        sessionScope: { threadRootMessage: null },
-        chatHistory: new ChatHistorySync({ isCommandText }),
-        models,
-        platformToolPackFactories: [],
-      });
-
-    await create("CWARNPRIVATE");
-    await create("CWARNPRIVATE:1700000000.000100");
-
-    const visibilityWarnings = warn.mock.calls.filter(([message]) =>
-      /cannot enforce private office visibility for /.test(String(message)),
-    );
-    expect(visibilityWarnings).toHaveLength(1);
-    expect(String(visibilityWarnings[0]![0])).toContain(office.key);
-    warn.mockRestore();
-  });
-});
 
 describe("PiAgentWrapper.run", () => {
   test("offers history everywhere, so a thread finds its channel's tool output", async () => {

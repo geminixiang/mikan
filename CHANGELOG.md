@@ -11,8 +11,26 @@ change in a minor release.
 
 ## [Unreleased]
 
+### Changed
+
+- `mikan` with no `--sandbox` flag now runs `--sandbox=oci`, mikan's published sandbox image, and
+  needs nerdctl, Podman, or Docker. It used to run the agent directly on the machine.
+- `mikan migrate` no longer needs `--sandbox`; the flag is accepted and ignored.
+- The system prompt tells the model that only files under the workspace persist and that installed
+  packages are discarded when the sandbox image is updated. It used to say that changes in the
+  container persist across sessions, which stopped being true when mikan began replacing containers
+  on an image update.
+
 ### Removed
 
+- The `host` and `container:<name>` sandboxes. `--sandbox=host` and `--sandbox=container:<name>`
+  stop mikan at startup with an error that names `oci`. Every office runs in a container mikan
+  manages, which is the only sandbox that enforced office visibility and mounted vault files. A
+  daemon started with `--sandbox=oci` or `--sandbox=oci:<image>` runs as before. To move a `host` or
+  `container:` deployment, start it with `--sandbox=oci`; credentials its people saved are left
+  under `~/.mikan/vaults` and are not read, so they sign in again with `/login`.
+- The migration `0002-actor-vaults`, which renamed the vaults of `host` and `container:` daemons.
+  Nothing reads those vaults now.
 - The Slack assistant pane: the greeting, the suggested prompts, and the conversation titles mikan
   set for an app with Slack's agent surface, and the example manifest
   `deploy/examples/slack-agent-manifest.json`. Mentions, DMs, threads, and the "mikan is working"

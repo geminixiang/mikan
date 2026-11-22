@@ -11,7 +11,6 @@ export function localExecution(workspace: Workspace): RunnerExecutionContext {
   const env = new NodeExecutionEnv({ cwd: workspace.root });
   return {
     env: () => env,
-    sandboxConfig: () => ({ type: "host" }),
     resolveForRun: async (context) => ({
       pathContext,
       projection: resolveWorkspaceProjection(workspace.office(context.address)),

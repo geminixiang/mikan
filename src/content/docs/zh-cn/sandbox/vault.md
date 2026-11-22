@@ -1,6 +1,6 @@
 ---
 title: Vault
-description: mikan 如何在 state directory 中存储凭证，并按沙箱模式注入环境变量或文件挂载。
+description: mikan 如何在 state directory 中存储凭证，并把环境变量和文件挂载注入沙箱。
 ---
 
 ## State directory 和 vault 位置
@@ -67,13 +67,7 @@ Vault 中的材料并不是同一类无差别的 secret：
 
 ## 沙箱行为
 
-| 沙箱模式           | Vault 环境变量注入 | 文件凭证           | Vault key             |
-| ------------------ | ------------------ | ------------------ | --------------------- |
-| `host`             | 不注入             | 拒绝               | 由平台用户派生        |
-| `container:<name>` | 注入               | 拒绝               | 由 container 名称派生 |
-| `oci:<image>`      | 注入               | 投影（bind mount） | office key            |
-
-**拒绝意味着运行会失败，而不是该文件被悄悄忽略。** vault 目录中只要存有 `env` 以外的任何文件，就会解析出一个文件 mount，而无法 mount 文件的模式会抛出 `Sandbox type "<type>" does not support vault file mounts`，而不是带着不完整的凭证集合运行。因此在这些模式上，请只用 `env` 保存凭证——早先 `oci` 部署遗留在 vault 中的一个多余 `gws.json`，就会让该对话无法运行。
+mikan 把 vault 的 `env` 条目注入办公室的容器，并把凭证文件以 bind mount 投影进去。vault key 就是 office key。
 
 office key 由平台名称与平台的原始对话 id 一起哈希派生，因此两个共用同一原始 id 的平台无法解析到彼此的凭证。`mikan migrate` 会把 0.5.3 的 vault 目录重命名为 office key；若两个目录同时存在，它会停止以便手动合并，而不是自行选一个。
 

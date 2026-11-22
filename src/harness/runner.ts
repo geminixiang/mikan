@@ -22,15 +22,9 @@ import type {
 } from "../types.js";
 import { ActorExecutionResolver } from "./execution-resolver.js";
 import type { DockerContainerManager } from "../sandbox/provisioner.js";
-import {
-  warnUnenforcedPrivateOffice,
-  createSandboxEnv,
-  getSandboxPathContext,
-} from "../sandbox/registry.js";
-import type { RuntimePathContext, SandboxConfig } from "../sandbox/types.js";
+import type { RuntimePathContext } from "../sandbox/types.js";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { VaultManager } from "../vault/types.js";
-import { resolveWorkspaceProjection } from "../office/projection.js";
 import type {
   RunnerExecutionContext,
   PlatformToolRoles,
@@ -73,37 +67,17 @@ import * as log from "../log.js";
 import { errorMessage } from "../unknown-values.js";
 
 function createRunnerExecutionContext(
-  sandboxConfig: SandboxConfig,
-  vaultManager: VaultManager | undefined,
+  vaultManager: VaultManager,
   provisioner: DockerContainerManager | undefined,
   workspace: Workspace,
 ): RunnerExecutionContext {
-  const resolver =
-    vaultManager && sandboxConfig.type !== "host"
-      ? new ActorExecutionResolver(sandboxConfig, vaultManager, provisioner, workspace)
-      : undefined;
-  if (!resolver) {
-    const pathContext = getSandboxPathContext(sandboxConfig, workspace.root);
-    const env = createSandboxEnv(sandboxConfig, { cwd: pathContext.runtimeWorkspaceRoot });
-    return {
-      env: () => env,
-      sandboxConfig: () => sandboxConfig,
-      async resolveForRun(context) {
-        return {
-          pathContext,
-          projection: resolveWorkspaceProjection(workspace.office(context.address)),
-        };
-      },
-    };
-  }
-
-  let resolved: { env: ExecutionEnv; sandboxConfig: SandboxConfig } | undefined;
+  const resolver = new ActorExecutionResolver(vaultManager, provisioner, workspace);
+  let env: ExecutionEnv | undefined;
   return {
-    env: () => resolved?.env,
-    sandboxConfig: () => resolved?.sandboxConfig ?? sandboxConfig,
+    env: () => env,
     async resolveForRun(context) {
       const decision = await resolver.resolve(context);
-      resolved = decision;
+      env = decision.env;
       return { pathContext: decision.pathContext, projection: decision.projection };
     },
   };
@@ -188,7 +162,6 @@ async function preparePromptContext(params: PrepareRunParams): Promise<RunPrompt
     workspacePath: pathContext.runtimeWorkspaceRoot,
     office,
     memory,
-    sandboxConfig: execution.sandboxConfig(),
     platform,
     skills: conversationSkillLoad.skills,
     projection,
@@ -646,7 +619,6 @@ async function finishRunnerCreation(params: {
 export async function createRunner(options: CreateRunnerOptions): Promise<PiAgentWrapper> {
   options.signal?.throwIfAborted();
   const {
-    sandboxConfig,
     sessionKey,
     office,
     trustModel,
@@ -671,11 +643,8 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
     mcpServers: trustModel === "open-trigger" ? {} : (resolvedAgentConfig.mcpServers ?? {}),
   };
 
-  const projection = resolveWorkspaceProjection(office);
-  warnUnenforcedPrivateOffice(sandboxConfig, projection.visibility, office.key);
   const execution =
-    options.execution ??
-    createRunnerExecutionContext(sandboxConfig, vaultManager, provisioner, office.workspace);
+    options.execution ?? createRunnerExecutionContext(vaultManager, provisioner, office.workspace);
   const toolContext: MikanToolContext = { env: execution.env };
 
   const modelRegistry = options.models;
@@ -688,7 +657,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   const toolBindings = createMikanTools(
     execution.env,
     new OfficeEventStore(office, options.eventScheduler),
-    { sandbox: sandboxConfig, resourceController: resourceController ?? provisioner },
+    { resourceController: resourceController ?? provisioner },
     platformToolPacks,
     {
       model,

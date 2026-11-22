@@ -90,9 +90,8 @@ SLACK_QA_CHANNEL_ID=C_YOUR_QA_CHANNEL npm run test:e2e:slack:local -- e2e/slack/
 
 指令會 build、驗證 bot/user 同 workspace 且不同身分，在 private temp state
 啟動 daemon，再執行 E2E；結束時停止 daemon，保留私有 `daemon.log` 與
-`tests.log`。Artifacts 路徑會輸出到終端。測試使用 **host sandbox** 與 trusted/full
-的拋棄式 workspace；這不是 OS 隔離，需信任測試與模型，不要與 production
-共用憑證用途。其他平台與 telemetry 在測試程序中停用，不修改原 settings。
+`tests.log`。Artifacts 路徑會輸出到終端。測試使用 **oci sandbox**（需要 nerdctl、Podman 或 Docker，首次會拉取 sandbox image）與 trusted/full
+的拋棄式 workspace；不要與 production 共用憑證用途。其他平台與 telemetry 在測試程序中停用，不修改原 settings。
 
 `SLACK_QA_CONFIG_DIR` 可指定包含 mikan.env/settings.json 的來源目錄；models.json
 仍依 mikan 的模型載入規則。`SLACK_QA_WORKING_DIR` 指定既有 daemon 的 workspace，

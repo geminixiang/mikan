@@ -24,6 +24,8 @@ import { createGlobalSettingsFile } from "@mikan/settings/index.js";
 import { MikanModels } from "@mikan/harness/models.js";
 import { JevNotConfiguredError } from "@mikan/harness/jev.js";
 import { createConversationRuntime } from "@mikan/runtime/conversation-runtime.js";
+import { localRunnerFactory } from "@mikan/test/local-execution.js";
+import { runtimeServices } from "@mikan/test/runtime-services.js";
 import { SlackMessagingBot } from "@mikan/adapters/slack/bot.js";
 import { SessionStore } from "@mikan/sessions/session-store.js";
 import type {
@@ -161,8 +163,9 @@ class World {
     };
     this.runtime = createConversationRuntime({
       workspace: this.workspace,
-      sandbox: { type: "host" },
       models: this.models,
+      ...runtimeServices(this.workspace.stateDir),
+      runnerFactory: localRunnerFactory,
       platformToolPackFactories: [() => ({ tools: [tool], bindRun: () => {} })],
     });
     this.socket = new FakeSlackSocket();

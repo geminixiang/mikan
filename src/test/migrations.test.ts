@@ -28,7 +28,6 @@ import {
   officeKey,
   OfficeRegistry,
 } from "../office/index.js";
-import { containerCredentialKey, userCredentialKey } from "../sandbox/identity.js";
 import { SessionStore } from "../sessions/session-store.js";
 import type { PlatformName } from "../types.js";
 
@@ -66,7 +65,6 @@ function context(overrides: Partial<MigrationContext> = {}): MigrationContext {
     dryRun: false,
     owners: new Map(),
     enabledPlatforms: ["slack"],
-    sandbox: { type: "oci", image: "mikan-sandbox:latest" },
     piAgentDir,
     modelsPath: join(stateDir, "models.json"),
     docker: async (args) => {
@@ -321,31 +319,6 @@ describe("moving sessions out of the office directory", () => {
   });
 });
 
-describe("host and container vaults", () => {
-  test("host vaults named by raw user ID move to hashed user keys", async () => {
-    write(join(stateDir, "vaults", "U0123456789", "env"), "TOKEN=u\n");
-    write(join(stateDir, "vaults", "shared", "team", "env"), "TOKEN=s\n");
-
-    await runMigrations(context({ sandbox: { type: "host" } }));
-
-    expect(
-      readFileSync(join(stateDir, "vaults", userCredentialKey("U0123456789"), "env"), "utf-8"),
-    ).toBe("TOKEN=u\n");
-    expect(existsSync(join(stateDir, "vaults", "U0123456789"))).toBe(false);
-    expect(existsSync(join(stateDir, "vaults", "shared", "team", "env"))).toBe(true);
-  });
-
-  test("the configured container's vault moves to its hashed container key", async () => {
-    write(join(stateDir, "vaults", "container-dev", "env"), "TOKEN=c\n");
-    write(join(stateDir, "vaults", "U0123456789", "env"), "TOKEN=u\n");
-
-    await runMigrations(context({ sandbox: { type: "container", container: "dev" } }));
-
-    expect(existsSync(join(stateDir, "vaults", containerCredentialKey("dev"), "env"))).toBe(true);
-    expect(existsSync(join(stateDir, "vaults", "U0123456789"))).toBe(true);
-  });
-});
-
 describe("office ownership", () => {
   test("a directory name that fits several enabled platforms needs an explicit owner", async () => {
     write(join(workspaceRoot, "123456", "log.jsonl"), "{}\n");
@@ -401,12 +374,9 @@ describe("the migration record", () => {
     const message = formatPendingMigrations({
       pending: MIGRATIONS.slice(0, 1),
       workspaceRoot,
-      sandbox: { type: "container", container: "dev" },
     });
 
     expect(message).toContain("0001-office-layout");
-    expect(message).toContain(
-      `mikan migrate --workspace ${workspaceRoot} --sandbox container:dev --dry-run`,
-    );
+    expect(message).toContain(`mikan migrate --workspace ${workspaceRoot} --dry-run`);
   });
 });

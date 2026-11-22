@@ -4,31 +4,20 @@ Scope: the Vault holds only the development keys that R&D services need injected
 
 File-backed credential vault for env secrets, secret files, shared profiles, and sandbox mounts.
 
-## Contracts
-
-- `resolveVaultInjection` fails closed when a sandbox backend cannot mount vault files.
-
 ## Vault keys
 
-One directory under `<stateDir>/vaults/` per key. Which key a run
-authenticates as is decided by `credentialAuthorizationKey`
-(`sandbox/identity.ts`), never by this module:
-
-| Sandbox type                | Key                                                                                                                             |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| conversation-scoped (`oci`) | the **office key** — platform-scoped, so two platforms sharing a raw conversation id can never resolve each other's credentials |
-| `host`                      | a user-derived key (the host has no execution isolation to scope to)                                                            |
-| `container`                 | a key derived from the deployment-chosen container name                                                                         |
+One directory under `<stateDir>/vaults/` per key. A run authenticates as its
+**office key**, which is platform-scoped, so two platforms sharing a raw
+conversation id can never resolve each other's credentials.
 
 `shared/<name>` is a reserved namespace for named shared login profiles.
 `extensions/` also remains reserved as a legacy namespace: executable
 extensions are no longer loaded, but old secret files are left untouched and
 must never be mistaken for user vaults or mounted into a Sandbox.
 
-Only exact pre-hash host/shared-container keys remain readable as a legacy
-fallback. Lossy managed-sandbox keys cannot prove ownership and are not
-resolved; legacy raw-id conversation dirs are renamed to office keys by the
-boot migration instead.
+Legacy raw-id conversation dirs are renamed to office keys by `mikan migrate`.
+Vaults that a `host` or `container:<name>` daemon wrote are left in place and
+are not resolved.
 
 ## Identity model (which credentials a conversation gets)
 

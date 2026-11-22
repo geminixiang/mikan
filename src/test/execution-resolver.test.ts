@@ -2,8 +2,6 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import * as log from "../log.js";
-import { credentialAuthorizationKey } from "../sandbox/identity.js";
 import { createGlobalSettingsFile } from "../settings/index.js";
 import { ActorExecutionResolver } from "../harness/execution-resolver.js";
 import { FileVaultManager } from "../vault/index.js";
@@ -12,7 +10,7 @@ import { recordPlatformChannelKind } from "../office/projection.js";
 
 const C123_OFFICE = officeKey(createOfficeAddress("slack", "C123"));
 
-type ResolverVault = ConstructorParameters<typeof ActorExecutionResolver>[1];
+type ResolverVault = ConstructorParameters<typeof ActorExecutionResolver>[0];
 
 function fakeVault(lookup: Pick<ResolverVault, "hasEntry" | "resolve">): ResolverVault {
   return {
@@ -52,7 +50,6 @@ describe("ActorExecutionResolver", () => {
       "utf-8",
     );
     const resolver = new ActorExecutionResolver(
-      { type: "oci", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       workspace(),
@@ -71,7 +68,6 @@ describe("ActorExecutionResolver", () => {
     mkdirSync(settingsDir, { recursive: true });
     writeFileSync(join(settingsDir, "settings.json"), "{ invalid json }", "utf-8");
     const resolver = new ActorExecutionResolver(
-      { type: "oci", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       workspace(),
@@ -85,7 +81,6 @@ describe("ActorExecutionResolver", () => {
   test("rejects path-bearing conversation ids before reading or creating directories", () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
-      { type: "oci", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       workspace(),
@@ -112,7 +107,6 @@ describe("ActorExecutionResolver", () => {
   test("materializes the conversation office directory on resolve", async () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
-      { type: "oci", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       workspace(),
@@ -123,7 +117,6 @@ describe("ActorExecutionResolver", () => {
       address: createOfficeAddress("slack", "C123"),
     });
 
-    expect(decision.sandboxConfig.type).toBe("container");
     expect(decision.pathContext).toMatchObject({
       hostWorkspaceRoot: workspaceDir,
       runtimeWorkspaceRoot: "/workspace",
@@ -135,7 +128,6 @@ describe("ActorExecutionResolver", () => {
   test("recreates a deleted private conversation directory on the next projection", async () => {
     createGlobalSettingsFile(stateDir);
     const resolver = new ActorExecutionResolver(
-      { type: "oci", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       workspace(),
@@ -177,12 +169,7 @@ describe("ActorExecutionResolver", () => {
         mounts: [{ source, target: "/workspace/MEMORY.md/../skills/secret" }],
       }),
     });
-    const resolver = new ActorExecutionResolver(
-      { type: "oci", image: "ubuntu:24.04" },
-      vault,
-      undefined,
-      workspace(),
-    );
+    const resolver = new ActorExecutionResolver(vault, undefined, workspace());
 
     await expect(
       resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "C123") }),
@@ -199,12 +186,7 @@ describe("ActorExecutionResolver", () => {
         return undefined;
       },
     });
-    const resolver = new ActorExecutionResolver(
-      { type: "oci", image: "ubuntu:24.04" },
-      vault,
-      undefined,
-      workspace(),
-    );
+    const resolver = new ActorExecutionResolver(vault, undefined, workspace());
 
     await resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "A_B") });
     await resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "A-B") });
@@ -214,60 +196,18 @@ describe("ActorExecutionResolver", () => {
     expect(resolvedKeys).not.toContain("a-b");
   });
 
-  test.each([
-    ["host", { type: "host" }],
-    ["container", { type: "container", container: "mikan-sandbox" }],
-  ] as const)(
-    "serves a private channel on %s without refusing it",
-    async (label, sandboxConfig) => {
-      createGlobalSettingsFile(stateDir);
-      const currentWorkspace = workspace();
-      const address = createOfficeAddress("slack", `C${label.toUpperCase()}PRIV`);
-      recordPlatformChannelKind(currentWorkspace.office(address), "private_channel");
-      const resolver = new ActorExecutionResolver(
-        sandboxConfig,
-        new FileVaultManager(stateDir),
-        undefined,
-        currentWorkspace,
-      );
-      const decision = await resolver.resolve({ userId: "U123", address });
-      expect(decision.projection.visibility).toBe("private");
-    },
-  );
-
   test("allows image mode for a platform-derived private channel", async () => {
     createGlobalSettingsFile(stateDir);
     const currentWorkspace = workspace();
     const address = createOfficeAddress("slack", "C123");
     recordPlatformChannelKind(currentWorkspace.office(address), "private_channel");
     const resolver = new ActorExecutionResolver(
-      { type: "oci", image: "ubuntu:24.04" },
       new FileVaultManager(stateDir),
       undefined,
       currentWorkspace,
     );
 
     await expect(resolver.resolve({ userId: "U123", address })).resolves.toBeDefined();
-  });
-
-  test("host mode resolves an unknown-kind office through the hashed user vault", async () => {
-    createGlobalSettingsFile(stateDir);
-    const resolvedKeys: string[] = [];
-    const vault = fakeVault({
-      hasEntry: () => true,
-      resolve: (key: string) => {
-        resolvedKeys.push(key);
-        return undefined;
-      },
-    });
-    const resolver = new ActorExecutionResolver({ type: "host" }, vault, undefined, workspace());
-    vi.spyOn(log, "logWarning").mockImplementation(() => {});
-
-    await expect(
-      resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "C123") }),
-    ).resolves.toBeDefined();
-
-    expect(resolvedKeys).toEqual([expect.stringMatching(/^u123-[a-f0-9]{12}$/)]);
   });
 
   test("fails closed when vault file mounts overlap each other", async () => {
@@ -289,48 +229,10 @@ describe("ActorExecutionResolver", () => {
         ],
       }),
     });
-    const resolver = new ActorExecutionResolver(
-      { type: "oci", image: "ubuntu:24.04" },
-      vault,
-      undefined,
-      workspace(),
-    );
+    const resolver = new ActorExecutionResolver(vault, undefined, workspace());
 
     await expect(
       resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "C123") }),
     ).rejects.toThrow(/overlaps vault target/);
-  });
-
-  test("fails closed when an adapter cannot mount vault files", async () => {
-    createGlobalSettingsFile(stateDir);
-    const vault = new FileVaultManager(stateDir);
-    const key = credentialAuthorizationKey(
-      { type: "host" },
-      {
-        userId: "U123",
-        address: createOfficeAddress("slack", "C123"),
-      },
-    );
-    vault.upsertFile(key, "secret", "value");
-    const resolver = new ActorExecutionResolver({ type: "host" }, vault, undefined, workspace());
-
-    await expect(
-      resolver.resolve({ userId: "U123", address: createOfficeAddress("slack", "C123") }),
-    ).rejects.toThrow(/does not support vault file mounts/);
-  });
-
-  test("a shared container resolves an office of unknown kind as private", async () => {
-    createGlobalSettingsFile(stateDir);
-    const resolver = new ActorExecutionResolver(
-      { type: "container", container: "mikan-sandbox" },
-      new FileVaultManager(stateDir),
-      undefined,
-      workspace(),
-    );
-    const decision = await resolver.resolve({
-      userId: "alice",
-      address: createOfficeAddress("slack", "CCFUNKNOWN"),
-    });
-    expect(decision.projection.visibility).toBe("private");
   });
 });

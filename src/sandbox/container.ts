@@ -4,65 +4,13 @@ import { readFileSync } from "node:fs";
 import { promisify } from "node:util";
 import { ExecutionError, FileError, err, type ExecutionEnv } from "@earendil-works/pi-durable/env";
 import { Connection, RemoteExecutionEnv, packagedDaemon } from "@earendil-works/pi-env";
-import type {
-  ContainerExecutionEnvOptions,
-  ContainerSandboxConfig,
-  SandboxAdapter,
-} from "./types.js";
-import { SandboxError, execSimple } from "./utils.js";
+import type { ContainerExecutionEnvOptions } from "./types.js";
+import { execSimple } from "./utils.js";
 import { containerEngine } from "./engine.js";
 import { errorMessage } from "../unknown-values.js";
 import * as log from "../log.js";
 
 const execFileAsync = promisify(execFile);
-
-function parseContainerSandboxArg(value: string): ContainerSandboxConfig | undefined {
-  if (!value.startsWith("container:")) {
-    return undefined;
-  }
-
-  const container = value.slice("container:".length);
-  if (!container) {
-    throw new SandboxError(
-      "Error: container sandbox requires container name (e.g., container:mikan-sandbox)",
-    );
-  }
-  return { type: "container", container };
-}
-
-async function validateContainerSandbox(config: ContainerSandboxConfig): Promise<void> {
-  const engine = containerEngine();
-  try {
-    await execSimple(engine, ["--version"]);
-  } catch {
-    throw new SandboxError(
-      `Error: no container engine found; install nerdctl, Podman, or Docker (tried '${engine}')`,
-    );
-  }
-
-  try {
-    const result = await execSimple(engine, [
-      "inspect",
-      "-f",
-      "{{.State.Running}}",
-      config.container,
-    ]);
-    if (result.trim() !== "true") {
-      throw new SandboxError(`Error: Container '${config.container}' is not running.`, [
-        `Start it with: ${engine} start ${config.container}`,
-      ]);
-    }
-  } catch (error) {
-    if (error instanceof SandboxError) {
-      throw error;
-    }
-    throw new SandboxError(`Error: Container '${config.container}' does not exist.`, [
-      `Create it with: ${engine} run -d --name ${config.container} -v <workspace>:/workspace docker.io/library/alpine:latest sleep infinity`,
-    ]);
-  }
-
-  console.log(`  Container '${config.container}' is running (engine: ${engine}).`);
-}
 
 const GITHUB_CREDENTIAL_KEY = "credential.https://github.com.helper";
 
@@ -199,16 +147,6 @@ export function createContainerExecutionEnv(options: ContainerExecutionEnvOption
   });
   return readiedEnv(env, ensureReady, options.markUsed ?? (() => {}));
 }
-
-export const containerSandboxAdapter: SandboxAdapter<ContainerSandboxConfig> = {
-  type: "container",
-  credentials: { env: true, fileMounts: false },
-  workspace: { managedProjection: false },
-  parse: parseContainerSandboxArg,
-  validate: validateContainerSandbox,
-  createEnv: (config, options) =>
-    createContainerExecutionEnv({ ...options, container: config.container }),
-};
 
 async function ensureContainerRunning(container: string, engine: string): Promise<void> {
   try {

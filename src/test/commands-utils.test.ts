@@ -70,7 +70,6 @@ function makeContext(overrides: ContextOverrides = {}): CommandContext {
         root: "/tmp/no-such-working-dir",
         stateDir: "/tmp/no-such-working-dir/state",
       }),
-      sandbox: { type: "host" },
       vaultManager: fakeVaultManager(),
       linkTokenStore: { create: () => ({ token: "tok-link" }) },
       sessionViewTokenStore: { create: () => ({ token: "tok-sv" }) },

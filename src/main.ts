@@ -207,7 +207,7 @@ if (!plan.workingDirExplicit) {
   ensureDirExists(workingDir);
 }
 try {
-  assertStateDirOutsideWorkspace(stateDir, workingDir, sandbox.type);
+  assertStateDirOutsideWorkspace(stateDir, workingDir);
 } catch (error) {
   handleStartupError(error);
 }
@@ -234,7 +234,7 @@ try {
 
 const pending = pendingMigrations(stateDir);
 if (pending.length > 0) {
-  console.error(formatPendingMigrations({ pending, workspaceRoot: workingDir, sandbox }));
+  console.error(formatPendingMigrations({ pending, workspaceRoot: workingDir }));
   process.exit(1);
 }
 
@@ -248,13 +248,7 @@ const workspace = createWorkspace({ root: workingDir, stateDir });
 
 const vaultManager = new FileVaultManager(stateDir);
 if (vaultManager.isEnabled()) {
-  console.log(
-    sandbox.type === "container"
-      ? "  Vault system enabled. Container vault active."
-      : sandbox.type === "oci"
-        ? "  Vault system enabled. Conversation-scoped credential routing active."
-        : "  Vault system enabled. Host mode will not inject vault env.",
-  );
+  console.log("  Vault system enabled. Conversation-scoped credential routing active.");
 }
 
 const startupConfig = (() => {
@@ -285,21 +279,14 @@ const sandboxLimits =
     ? { cpus: sandboxSettings?.cpus, memory: sandboxSettings?.memory }
     : undefined;
 
-const provisioner =
-  sandbox.type === "oci"
-    ? new DockerContainerManager(sandbox.image, {
-        limits: sandboxLimits,
-      })
-    : undefined;
-void provisioner?.prepareImage();
+const provisioner = new DockerContainerManager(sandbox.image, { limits: sandboxLimits });
+void provisioner.prepareImage();
 
-if (sandbox.type === "oci") {
-  ensureDirExists(workspace.skillsDir);
-  try {
-    writeFileSync(workspace.memoryPath, "", { flag: "wx" });
-  } catch (err) {
-    if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
-  }
+ensureDirExists(workspace.skillsDir);
+try {
+  writeFileSync(workspace.memoryPath, "", { flag: "wx" });
+} catch (err) {
+  if ((err as NodeJS.ErrnoException).code !== "EEXIST") throw err;
 }
 
 const linkTokenStore = new InMemoryLinkTokenStore();
@@ -308,7 +295,7 @@ const desktopTokenStore = new InMemoryDesktopTokenStore();
 const desktop = provisioner ? new OfficeDesktop(provisioner) : undefined;
 const openDesktop =
   provisioner && desktop
-    ? createDesktopOpener({ sandbox, vaultManager, provisioner, workspace, desktop })
+    ? createDesktopOpener({ vaultManager, provisioner, workspace, desktop })
     : undefined;
 const runEvents = new RunEventHub();
 const adminTokenStore = new InMemoryAdminTokenStore();
@@ -403,7 +390,6 @@ const handler = createConversationRuntime({
   workspace,
   models: mikanModels,
   eventScheduler: () => eventScheduler,
-  sandbox,
   vaultManager,
   provisioner,
   linkTokenStore,
@@ -417,13 +403,7 @@ const handler = createConversationRuntime({
   platformToolPackFactories: buildPlatformToolPackFactories(),
 });
 
-const sandboxDesc =
-  sandbox.type === "host"
-    ? "host"
-    : sandbox.type === "container"
-      ? `container:${sandbox.container}`
-      : `oci:${sandbox.image}`;
-log.logStartup(workingDir, sandboxDesc);
+log.logStartup(workingDir, `oci:${sandbox.image}`);
 logHarnessStartupSummary();
 
 function logHarnessStartupSummary(): void {
@@ -528,7 +508,6 @@ const webServer = LINK_PORT
         adminTokenStore,
         workspace,
         runtime: handler,
-        sandbox,
         botsByPlatform,
         eventScheduler: () => eventScheduler,
       },

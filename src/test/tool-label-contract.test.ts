@@ -42,7 +42,7 @@ describe("every agent-facing tool requires a label parameter", () => {
     const { tools } = createMikanTools(
       () => undefined,
       mockEventStore(),
-      { sandbox: { type: "host" } },
+      {},
       [createGithubToolPack(mockGithubOps(), new Set(["triage", "push"]))],
       undefined,
     );

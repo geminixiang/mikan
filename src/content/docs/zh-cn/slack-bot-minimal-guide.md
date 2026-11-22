@@ -107,16 +107,8 @@ mikan 的状态固定存放在 `~/.mikan`，working directory 默认为 `~/.mika
 
 Bot 会在 DM 中回复，也会在频道中被提及时回复。触发的 Slack 话题工作使用隔离会话，其 key 包含话题时间戳。共享频道话题中普通的未提及回复只会被记录，不会启动运行。
 
-## 9. 选择沙箱
+## 9. 沙箱
 
-不带 `--sandbox` 时，mikan 会直接在主机上运行工具。办公室 visibility 跟随 Slack 对话类型：公开频道是 public 办公室，可写入共享的 `MEMORY.md` 和 `skills/`；私密频道和 DM 是 private 办公室，只能读取它们，且其他任何办公室都无法读取它们。Host 模式无法强制执行 private 办公室，会在运行它们时记录一次警告。请在第一次真正对话之前先选定一种：
+mikan 让每个对话在自己的容器中运行工具。不带 `--sandbox` 时使用 `oci`，也就是为当前安装的 mikan 版本发布的镜像，所以主机需要 nerdctl、Podman 或 Docker。办公室 visibility 跟随 Slack 对话类型：公开频道是 public 办公室，可写入共享的 `MEMORY.md` 和 `skills/`；私密频道和 DM 是 private 办公室，只能读取它们，且其他任何办公室都无法读取它们。沙箱会强制执行这一点，无需更改设置。
 
-- **推荐做法。** 使用受管理的沙箱，它为每个对话提供独立容器，无需更改设置即可强制执行办公室 visibility：
-
-  ```bash
-  mikan --sandbox=oci
-  ```
-
-- **Host 模式**，仅限在你已经信任其访问整个工作区的机器上：每个对话（包括 DM 和私密频道）都能读取其他所有对话的文件。
-
-完整对比请参阅 [Sandbox](/zh-cn/sandbox/)。
+详情请参阅 [Sandbox](/zh-cn/sandbox/)。

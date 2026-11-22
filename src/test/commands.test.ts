@@ -17,7 +17,6 @@ import { DesktopCommandHandler } from "../adapters/commands/desktop.js";
 import { OfficeDesktop } from "../sandbox/desktop.js";
 import { createDesktopOpener } from "../harness/desktop.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
-import { runtimeResourceKey } from "../sandbox/identity.js";
 import type {
   CommandContext,
   CommandHandler,
@@ -25,7 +24,6 @@ import type {
 } from "../adapters/commands/types.js";
 import { SessionStore } from "../sessions/session-store.js";
 import { DockerContainerManager } from "../sandbox/provisioner.js";
-import type { SandboxConfig } from "../sandbox/types.js";
 import type { VaultManager } from "../vault/types.js";
 
 interface RecordingResponseCtx extends ConversationResponder {
@@ -147,7 +145,6 @@ interface BuildContextArgs {
 function buildContext(args: BuildContextArgs): CommandContext & {
   responder: RecordingResponseCtx;
 } {
-  const sandbox: SandboxConfig = { type: "host" };
   const responder = fakeResponseCtx();
   const services: CommandServices = {
     workspace: testWorkspace("/tmp/no-such-working-dir"),
@@ -156,7 +153,6 @@ function buildContext(args: BuildContextArgs): CommandContext & {
       handleCompactCommand: vi.fn().mockResolvedValue({ compacted: false }),
       refreshConversation: vi.fn().mockReturnValue(true),
     },
-    sandbox,
     vaultManager: fakeVaultManager(),
     linkTokenStore: fakeLinkTokenStore(),
     sessionViewTokenStore: fakeSessionViewTokenStore(),
@@ -450,7 +446,7 @@ describe("LoginCommandHandler", () => {
         platform: "slack",
         platformUserId: "U123",
         conversationId: "C123",
-        vaultId: "u123-774767d55773",
+        vaultId: officeKey(createOfficeAddress("slack", "C123")),
         providerId: "",
       },
     ]);
@@ -510,7 +506,6 @@ describe("LoginCommandHandler", () => {
       services: {
         vaultManager,
         provisioner,
-        sandbox: { type: "oci", image: "ubuntu:24.04" },
       },
     });
 
@@ -522,12 +517,7 @@ describe("LoginCommandHandler", () => {
     expect(ctx.services.runtime?.refreshConversation).toHaveBeenCalledWith(
       createOfficeAddress("slack", "C123"),
     );
-    expect(remove).toHaveBeenCalledWith(
-      runtimeResourceKey(
-        { type: "oci", image: "ubuntu:24.04" },
-        { userId: "U123", address: createOfficeAddress("slack", "C123") },
-      ),
-    );
+    expect(remove).toHaveBeenCalledWith(officeKey(createOfficeAddress("slack", "C123")));
     expect(ctx.responder.responses[0]).toContain("Copied shared login profile `team-tools`");
     expect(ctx.responder.responses[0]).toContain("will be recreated with the copied env");
   });
@@ -547,7 +537,6 @@ describe("LoginCommandHandler", () => {
           handleCompactCommand: vi.fn().mockResolvedValue({ compacted: false }),
           refreshConversation: vi.fn().mockReturnValue(false),
         },
-        sandbox: { type: "oci", image: "ubuntu:24.04" },
       },
     });
 
@@ -569,7 +558,6 @@ describe("LoginCommandHandler", () => {
       vaultConversationId: "C123",
       services: {
         linkTokenStore,
-        sandbox: { type: "oci", image: "ubuntu:24.04" },
         vaultManager,
       },
     });
@@ -740,7 +728,6 @@ describe("NewCommandHandler", () => {
 
 describe("DesktopCommandHandler", () => {
   const handler = new DesktopCommandHandler();
-  const oci: SandboxConfig = { type: "oci", image: "ghcr.io/example/sandbox:1" };
 
   function desktopServices(
     desktopExec: (args: string[]) => Promise<{ stdout: string }>,
@@ -761,10 +748,8 @@ describe("DesktopCommandHandler", () => {
       desktopExecFile,
       services: {
         workspace,
-        sandbox: oci,
         provisioner,
         openDesktop: createDesktopOpener({
-          sandbox: oci,
           vaultManager: fakeVaultManager(),
           provisioner,
           workspace,
@@ -856,11 +841,11 @@ describe("DesktopCommandHandler", () => {
     expect(ctx.responder.responses.join("\n")).toMatch(/could not start/);
   });
 
-  test("other sandbox modes have no desktop", async () => {
+  test("a server without a desktop opener says the desktop is not configured", async () => {
     const ctx = buildContext({ commandText: "/pi-desktop", privateConversation: true });
 
     expect(await handler.tryHandle(ctx)).toBe(true);
 
-    expect(ctx.responder.responses.join("\n")).toMatch(/--sandbox=oci/);
+    expect(ctx.responder.responses.join("\n")).toMatch(/not configured on the server/);
   });
 });

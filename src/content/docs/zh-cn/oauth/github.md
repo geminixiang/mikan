@@ -40,19 +40,13 @@ export GITHUB_OAUTH_CLIENT_SECRET="<client-secret>"
 ## 3. 启动 mikan
 
 ```bash
-mikan --sandbox=container:mikan-tools /path/to/workspace
-```
-
-或使用 managed per-user container：
-
-```bash
 mikan --sandbox=oci:mikan-sandbox:tools /path/to/workspace
 ```
 
 或：
 
 ```bash
-
+mikan --sandbox=oci:ubuntu:24.04 /path/to/workspace
 ```
 
 ## 4. 使用 `/login`
@@ -72,7 +66,7 @@ GITHUB_OAUTH_ACCESS_TOKEN
 GH_TOKEN
 ```
 
-除 `host` 以外的每一种 sandbox 模式，都会把这些 env 注入后续的工具执行。
+mikan 会把这些 env 注入后续的工具执行。
 
 这些是登录者本人的 credentials，它们本就应该进入 sandbox——agent 以该身份运行 `gh` 和 `git`。请注意，这与 [GitHub 接入层](/zh-cn/platform-adapters/github/)所使用的 mikan 自身 GitHub App 身份是分开的，后者的 token 保留在主机侧，绝不进入 runtime。
 

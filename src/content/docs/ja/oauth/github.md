@@ -40,19 +40,13 @@ export GITHUB_OAUTH_CLIENT_SECRET="<client-secret>"
 ## 3. mikan の起動
 
 ```bash
-mikan --sandbox=container:mikan-tools /path/to/workspace
-```
-
-または、ユーザーごとに管理されたコンテナ（managed per-user container）を使用する場合：
-
-```bash
 mikan --sandbox=oci:mikan-sandbox:tools /path/to/workspace
 ```
 
 または：
 
 ```bash
-
+mikan --sandbox=oci:ubuntu:24.04 /path/to/workspace
 ```
 
 ## 4. `/login` の使用
@@ -72,7 +66,7 @@ GITHUB_OAUTH_ACCESS_TOKEN
 GH_TOKEN
 ```
 
-`host` を除くすべての sandbox モードで、その後のツール実行時にこれらの環境変数が注入されます。
+その後のツール実行時に、これらの環境変数が注入されます。
 
 これらはログインした本人の認証情報であり、sandbox に届くことが意図されています。エージェントはその人物として `gh` と `git` を実行します。これは [GitHub アダプター](/ja/platform-adapters/github/) が使う mikan 自身の GitHub App identity とは別物であり、そちらのトークンは host 側に留まり、ランタイムに入ることはありません。
 

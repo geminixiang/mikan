@@ -9,10 +9,10 @@ mikan 在正常啟動前需要全域設定檔。請先建立並檢查一次，�
 
 ```bash
 mikan onboard
-mikan --sandbox=host /path/to/workspace
+mikan --sandbox=oci /path/to/workspace
 ```
 
-mikan 會以 `0700` mode 建立不存在的 state directory。既有目錄必須由目前使用者擁有，且不得為 world-writable。使用 sandbox 模式時，請將它放在 workspace 外，避免工具存取憑證或管理員設定。
+mikan 會以 `0700` mode 建立不存在的 state directory。既有目錄必須由目前使用者擁有，且不得為 world-writable。請將它放在 workspace 外，避免工具存取憑證或管理員設定。
 
 ## 設定位置
 
@@ -72,8 +72,6 @@ Office key 無法反推回原始平台 id，因此 host 會在 `~/.mikan/office-
 Slack auto-reply 可透過 `/pi-auto-reply on|off|jev` 修改，並以 conversation office 裡的 `auto-reply`（on）或 `auto-reply.jev`（jev）marker 檔保存；`off` 會移除兩者。Marker 內容會被忽略：`on` 會回應該 channel 中每則未明確 address mikan 的 human message，`jev` 則由 Jev 逐則判斷訊息是否在對 mikan 說話。已退役的 `autoReply` 與 `llm.autoReply` JSON 設定會被忽略，daemon 啟動時會列出它們，方便刪除。
 
 Office visibility 跟隨 Slack 對話類型（ADR 0008）；Telegram、Discord、GitHub 的對話一律是 private。公開頻道是 **public** office：其他所有 office 都能在 `/workspace/public/<office key>` 唯讀它，且它可以寫入 workspace 全域的 `MEMORY.md` 與 `skills/`。私人頻道、DM、群組 DM、外部共享頻道，以及尚未觀察到類型的對話都是 **private** office：只有自己看得到，可讀共用知識與 public office，但不會寫回。每個 office 的掛載形狀相同；沒有任何佈局會掛載 workspace root。
-
-只有 `oci:*` 會強制執行 visibility。`host`、`container:*` 讓所有 office 共用同一個檔案系統，屬於受信任部署；private office 在這些模式下會照常服務，並記錄一次警告。
 
 已退役的 door policy 設定（`sandbox.workspace.doorPolicy`、`layout`、`visibility`，以及舊版 `sandbox.image.workspaceMount`）如果存在會被忽略，也不會改變 projection。沒有任何設定能讓一個 office 觸及另一個 private office。
 
@@ -142,15 +140,15 @@ OpenConnector 是一個附帶部署預設值的一般 MCP server。`OPENCONNECTO
 
 ## CLI 參考
 
-| 指令或選項                                                             | 用途                                                                     |
-| ---------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `mikan onboard`                                                        | 建立必要的全域設定檔                                                     |
-| `mikan [--sandbox=<mode>] [working-directory]`                         | 啟動已設定的平台 bot；working directory 預設為 `~/.mikan/workspace`      |
-| `mikan env`                                                            | 顯示完整的環境變數清單，以及目前已設定的項目                             |
-| `mikan --version`                                                      | 顯示已安裝版本                                                           |
-| `mikan --help`                                                         | 顯示 CLI 用法與平台 token 摘要                                           |
-| `mikan office list`                                                    | 列出每個 office key 及其平台與 conversation id                           |
-| `mikan migrate --sandbox=<mode> [--dry-run] [--owner <id>=<platform>]` | 在 daemon 停止時套用待處理的 [State 遷移](/zh-tw/deployment/#state-遷移) |
+| 指令或選項                                            | 用途                                                                     |
+| ----------------------------------------------------- | ------------------------------------------------------------------------ |
+| `mikan onboard`                                       | 建立必要的全域設定檔                                                     |
+| `mikan [--sandbox=<spec>] [working-directory]`        | 啟動已設定的平台 bot；working directory 預設為 `~/.mikan/workspace`      |
+| `mikan env`                                           | 顯示完整的環境變數清單，以及目前已設定的項目                             |
+| `mikan --version`                                     | 顯示已安裝版本                                                           |
+| `mikan --help`                                        | 顯示 CLI 用法與平台 token 摘要                                           |
+| `mikan office list`                                   | 列出每個 office key 及其平台與 conversation id                           |
+| `mikan migrate [--dry-run] [--owner <id>=<platform>]` | 在 daemon 停止時套用待處理的 [State 遷移](/zh-tw/deployment/#state-遷移) |
 
 `mikan migrate` 接受 `--workspace <dir>`，預設為 `~/.mikan/workspace`。
 

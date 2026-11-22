@@ -45,11 +45,11 @@ runtime は調整役です。platform は harness の永続化を知ってはな
 | **Runtime/session**    | `src/runtime/`、`src/sessions/`                                          | session key の文法、session ごとの直列化、chat/session 同期、runner lifecycle、stop/reset、shutdown                                          | runner への検証済み event。execution resolution への office と actor の入力                                          |
 | **Harness/tools**      | `src/harness/`、`src/harness/tools/`                                     | model turn、execution resolution、budgets、tool schema、skills、host capability 呼び出し                                                     | `ConversationResponder` への出力と `ExecutionEnv` 操作。platform SDK オブジェクトは受け取らない                      |
 | **Scheduled events**   | `src/events/`                                                            | event の wire protocol、parser/builder、1 つの office に限定された host store、ファイル名の検証、scheduler lifecycle                         | harness/Web への `EventStore`。platform messaging への正規化済み event                                               |
-| **Sandbox/workspace**  | `src/sandbox/`                                                           | 実行環境の実装、mount topology、runtime/host の path context、管理 container の lifecycle、ファイル転送                                      | path と credential の能力を宣言した Pi `ExecutionEnv`                                                                |
-| **Vault/web/security** | `src/vault/`、`src/adapters/web/`、`src/sandbox/identity.ts`             | credential identity と注入 policy、host 専用の portal/token 面、mount 衝突チェック、セキュリティ上重要な認可判断                             | vault policy への actor/trust 入力。credentials は選ばれた環境にだけ渡す                                             |
+| **Sandbox/workspace**  | `src/sandbox/`                                                           | 実行環境の実装、mount topology、runtime/host の path context、管理 container の lifecycle、ファイル転送                                      | Pi `ExecutionEnv` とその runtime path context                                                                        |
+| **Vault/web/security** | `src/vault/`、`src/adapters/web/`                                        | credential identity と注入 policy、host 専用の portal/token 面、mount 衝突チェック、セキュリティ上重要な認可判断                             | vault policy への actor/trust 入力。credentials は選ばれた環境にだけ渡す                                             |
 | **Config/CLI**         | `src/settings/`、`src/cli/`、`src/migrations/`、`src/adapters/commands/` | 起動/flag の文法、settings の永続化、state migration、command manifest                                                                       | 有効な settings と決定的な command 一覧                                                                              |
 
-ある conversation の harness instance は他の instance から context が隔離されていますが、それはファイルシステムやプロセスの sandbox ではありません。Sandbox の実行環境が変えるのは tools がどこで実行され、どの mount を受け取るかです。`host` モードと、管理されない `container:*` モードは office visibility を強制しません。seam をレビューするときはこれらを分けて考えてください。
+ある conversation の harness instance は他の instance から context が隔離されていますが、それはファイルシステムやプロセスの sandbox ではありません。Sandbox の実行環境が決めるのは、tools がどこで実行され、どの mount を受け取るかです。seam をレビューするときはこれらを分けて考えてください。
 
 ### owner をまたぐ seam
 
@@ -206,25 +206,13 @@ Core tools は、runner が供給する実行環境と host services を使い�
 
 ### `SandboxConfig`
 
-この discriminated union は現在 `host`、`container`、`oci` をサポートします。解析構文と成熟度は [Sandbox](/ja/sandbox/) にあります。
+`SandboxConfig` は oci の設定で、各 office の container を作るイメージを持ちます。`--sandbox` の構文は [Sandbox](/ja/sandbox/) にあります。
 
 ### `ExecutionEnv`
 
-実行境界は `@earendil-works/pi-durable/env` の Pi `ExecutionEnv` です。Pi 自身の `read`、`write`、`edit`、`bash` tools はこのインターフェースに対して書かれています。mikan は独自のインターフェースを追加しません:
+実行境界は `@earendil-works/pi-durable/env` の Pi `ExecutionEnv` です。Pi 自身の `read`、`write`、`edit`、`bash` tools はこのインターフェースに対して書かれています。mikan は独自のインターフェースを追加しません。actor/vault 解決が office の container をプロビジョニングし、tools は pi-env の `RemoteExecutionEnv` を通して、1 本の `exec -i` 接続で container 内の Pi の `pi-env` daemon と通信します。
 
-| Sandbox     | 環境                                                                                                |
-| ----------- | --------------------------------------------------------------------------------------------------- |
-| `host`      | Pi の `NodeExecutionEnv`                                                                            |
-| `container` | pi-env の `RemoteExecutionEnv`。1 本の `exec -i` 接続で container 内の Pi の `pi-env` daemon と通信 |
-| `oci`       | 直接の環境はなし。actor/vault 解決が container をプロビジョニングし、その `container` 環境を使う    |
-
-すべての環境は Pi の `registerEnvConformance` suite を通過しなければなりません。`src/test/container-execution-env.test.ts` がそれを実行します。Tool 実装は、`cat`、`printf`、quoting プロトコルを構築するのではなく、環境のファイル操作を呼び出します。
-
-### `SandboxAdapter`
-
-adapter は 1 つの CLI 値を認識し、任意でそれを検証し、任意で環境を作成します。`oci` には意図的に直接の環境がありません。actor/vault 解決が先に具体的な container をプロビジョニングします。
-
-adapter 登録は `src/sandbox/registry.ts` 内部の閉じたリストで、パッケージは `SandboxAdapter` も登録表も export しません。
+この環境は Pi の `registerEnvConformance` suite を通過しなければなりません。`src/test/container-execution-env.test.ts` がそれを実行します。Tool 実装は、`cat`、`printf`、quoting プロトコルを構築するのではなく、環境のファイル操作を呼び出します。
 
 ## 8. Vault と execution-resolution のインターフェース
 
@@ -236,15 +224,15 @@ Credential フローは次のとおりです:
 
 1. runtime が platform trust、conversation、user、sandbox topology を供給する。
 2. execution resolver が Workspace projection を解決し、actor/vault identity を選択する。
-3. `VaultManager` が env と mounts を解決し、collision と backend capability checks が grant 全体を検証する。
+3. `VaultManager` が env と mounts を解決し、collision check が grant 全体を検証する。
 4. 1 つの execution decision が projection、runtime path context、およびその run 用 credentials だけを持つ実行環境を返す。
 5. Prompt memory/skills と filesystem execution は同じ decision を使い、authorization を別々に再計算しない。
 
-Host sandbox 実行は決して vault 注入を受け取りません。Open-trigger platforms は決して ambient shared vault を受け取りません。これらはセキュリティの不変条件であり、便宜的な既定値ではありません。
+Open-trigger platforms は決して ambient shared vault を受け取りません。これはセキュリティの不変条件であり、便宜的な既定値ではありません。
 
 ## 9. Office、session、chat、identity のインターフェース
 
-ソース: `src/office/*`、`src/sessions/*`、`src/adapters/shared.ts`、`src/sandbox/identity.ts`。
+ソース: `src/office/*`、`src/sessions/*`、`src/adapters/shared.ts`。
 
 ### `Workspace` と `Office`
 
@@ -320,7 +308,7 @@ type EventFilePayload =
 | `~/.mikan/conversations/<officeKey>/sessions.db`   | session store         | host 専用の agent history（pi-durable SQLite） |
 | `~/.mikan/conversations/<officeKey>/events/*.json` | event store           | host 専用のスケジュール event                  |
 
-`MEMORY.md`、`skills`、`events`、`agents` は workspace root の予約名（`RESERVED_WORKSPACE_NAMES`）であり、それ以外の workspace root エントリはすべて office directory です。`~/.mikan/vaults/` 配下の conversation スコープの vault directory は、conversation スコープの sandbox では office key で命名されます。`host` モードは user、`container` モードは container 名で索きます。
+`MEMORY.md`、`skills`、`events`、`agents` は workspace root の予約名（`RESERVED_WORKSPACE_NAMES`）であり、それ以外の workspace root エントリはすべて office directory です。`~/.mikan/vaults/` 配下の conversation スコープの vault directory は office key で命名されます。
 
 state directory は sandbox から見える workspace 内に置いてはなりません。重要な state files は atomic な private write を使い、append-only logs は append セマンティクスを使います。
 
