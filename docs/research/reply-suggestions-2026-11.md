@@ -78,6 +78,12 @@ No run of any section produced more than two lines.
 
 The implementation is on hold for the owner's decision on which criterion gives.
 
+### Which models matter
+
+A deployment in use runs on four GPT-family models through its own gateway; no Claude model is in regular use there. Of that family only `gpt-6-luna` is in the tables above. An attempt to add three more of them failed for a reason that has nothing to do with the models: every run ended with the provider refusing the request for lack of credits, which the harness first recorded as "no suggestion". Those rows are discarded, and the harness now counts a failed run as an error. Four direct requests with a short system prompt show that two of those models do write the lines; what they do under mikan's full prompt is not measured yet.
+
+So the smallest Claude model's unwanted suggestions weigh little, and the criteria have to be judged on the models actually in use, on messages the wording was not tuned on.
+
 ## Recommendation
 
 Adopt C, in this shape:

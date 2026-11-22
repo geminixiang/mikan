@@ -8,7 +8,7 @@ The refactor scope keeps `slack_blockkit` only for interactive elements. The own
 
 ## How it was used
 
-Read from a deployment's logs over a month, without content. Calls were few. About two in three had no interactive element at all: they were tables and prose, which a normal reply renders. The interactive ones used buttons in an `actions` block; no select menu, date picker, checkbox, or radio button appeared. About one call in seven was rejected by Slack for malformed blocks. The reading looked at the start of each call's arguments, so a rare element late in a long call could have been missed; a full classification is to be repeated before the next deploy.
+Read from a deployment's logs over a month, without content. Calls were few. About two in three had no interactive element at all: they were tables and prose, which a normal reply renders. The interactive ones used buttons in an `actions` block; no select menu, date picker, checkbox, or radio button appeared. About one call in seven was rejected by Slack for malformed blocks. A second reading parsed each call's whole arguments and confirmed it: every interactive call used buttons and nothing else, between one and seven of them, beside a table and prose; a few also had `context` text, which becomes ordinary prose. No call replaced a message. Clicks were rare: on one day of the month.
 
 ## Choices
 
