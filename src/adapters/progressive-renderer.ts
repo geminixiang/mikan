@@ -1,7 +1,11 @@
 import type { ConversationResponder, ReplaceResponseOptions } from "../types.js";
 import * as log from "../log.js";
 import { createChatResponseErrorReporter, splitText } from "./shared.js";
-import type { ChatResponseErrorOperation, ProgressiveRendererPlatform } from "./types.js";
+import type {
+  ChatResponseErrorOperation,
+  ProgressiveMessageWriter,
+  ProgressiveRendererPlatform,
+} from "./types.js";
 import { errorMessage } from "../unknown-values.js";
 
 interface RendererState {
@@ -16,6 +20,7 @@ interface RendererState {
   extraIds: Array<string | number>;
   continuationIds: Array<string | number>;
   shown: string | null;
+  suggestions: readonly string[] | undefined;
   lastWriteAt: number;
   flushTimer: ReturnType<typeof setTimeout> | null;
 }
@@ -44,6 +49,7 @@ class ProgressiveRenderer {
       extraIds: [],
       continuationIds: [],
       shown: null,
+      suggestions: undefined,
       lastWriteAt: 0,
       flushTimer: null,
     };
@@ -85,26 +91,29 @@ class ProgressiveRenderer {
     return splitText(text, this.platform.maxLength, this.platform.formatContinuation);
   }
 
-  private async postOrUpdate(text: string): Promise<void> {
+  private async postOrUpdate(text: string, writer: ProgressiveMessageWriter): Promise<void> {
     if (this.state.responseId !== null) {
-      await this.platform.update(this.state.responseId, text);
+      await writer.update(this.state.responseId, text);
       return;
     }
     if (this.platform.typing?.stopOnSend) this.stopTyping();
-    this.state.responseId = await this.platform.post(text);
+    this.state.responseId = await writer.post(text);
   }
 
-  private async postSplit(text: string): Promise<void> {
+  private async postSplit(text: string, suggestions?: readonly string[]): Promise<void> {
     const [head = text, ...tail] = this.split(text);
-    await this.postOrUpdate(head);
+    const lastPartWriter =
+      (suggestions && this.platform.withSuggestions?.(suggestions)) || this.platform;
+    await this.postOrUpdate(head, tail.length === 0 ? lastPartWriter : this.platform);
     for (const [index, part] of tail.entries()) {
+      const writer = index === tail.length - 1 ? lastPartWriter : this.platform;
       const existing = this.state.continuationIds[index];
       if (existing !== undefined) {
-        await this.platform.update(String(existing), part);
+        await writer.update(String(existing), part);
         continue;
       }
       if (this.platform.typing?.stopOnSend) this.stopTyping();
-      const id = await this.platform.postExtra(part, this.state.responseId);
+      const id = await writer.postExtra(part, this.state.responseId);
       if (id !== undefined && id !== null) this.state.continuationIds[index] = id;
     }
   }
@@ -129,7 +138,7 @@ class ProgressiveRenderer {
     canonicalText = text,
   ): Promise<string> {
     try {
-      await this.postSplit(text);
+      await this.postSplit(text, this.state.suggestions);
       return canonicalText;
     } catch (err) {
       if (!this.platform.handleTooLong) throw err;
@@ -169,10 +178,12 @@ class ProgressiveRenderer {
       } finally {
         this.state.streamedSource = "";
       }
-      if (extendsStream && !this.platform.needsCanonicalRender?.(text)) return text;
+      const alreadyComplete =
+        extendsStream && !this.showsSuggestions() && !this.platform.needsCanonicalRender?.(text);
+      if (alreadyComplete) return text;
       return this.renderRaw(text, "replace", options);
     }
-    if (text === this.state.shown) return text;
+    if (text === this.state.shown && !this.showsSuggestions()) return text;
     if (this.state.responseId !== null || text) return this.renderRaw(text, "replace", options);
     return text;
   }
@@ -206,6 +217,7 @@ class ProgressiveRenderer {
       async () => {
         const sanitized = this.sanitize(text);
         this.state.source = this.state.source ? `${this.state.source}\n${sanitized}` : sanitized;
+        this.state.suggestions = undefined;
         this.cancelFlush();
         await this.renderView();
         if (this.state.responseId !== null && this.platform.logIntermediateResponses) {
@@ -226,6 +238,8 @@ class ProgressiveRenderer {
       "replace_response",
       async () => {
         this.state.source = this.sanitize(text);
+        this.state.suggestions =
+          options?.final && options.suggestions?.length ? options.suggestions : undefined;
         if (options?.final) await this.finish(options);
         else await this.show(options);
       },
@@ -245,6 +259,10 @@ class ProgressiveRenderer {
       return;
     }
     await this.renderView(options);
+  }
+
+  private showsSuggestions(): boolean {
+    return this.state.suggestions !== undefined && this.platform.withSuggestions !== undefined;
   }
 
   private async finish(options: ReplaceResponseOptions): Promise<void> {
@@ -393,6 +411,9 @@ class ProgressiveRenderer {
         await this.platform.onWorkingChanged?.(working, this.state.responseId);
         if (this.state.responseId === null) return;
         if (!working && this.state.streamActive) await this.stopNativeStream();
+        const finalWithSuggestionsShown =
+          this.showsSuggestions() && this.state.shown === this.state.source;
+        if (finalWithSuggestionsShown) return;
         await this.renderView();
       },
       () => ({ working }),
@@ -422,6 +443,7 @@ class ProgressiveRenderer {
         this.stopTyping();
         this.cancelFlush();
         this.state.shown = null;
+        this.state.suggestions = undefined;
         if (this.state.streamActive) await this.stopNativeStream().catch(() => undefined);
         for (const id of [...this.state.extraIds, ...this.state.continuationIds]) {
           try {

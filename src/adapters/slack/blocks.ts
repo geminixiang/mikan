@@ -125,14 +125,21 @@ function headingsAsBoldLines(text: string): string {
   return lines.join("\n");
 }
 
-function fitSlackBlockLimit(blocks: KnownBlock[]): KnownBlock[] {
-  const expanded = blocks.reduce(
+function expandedBlockTotal(blocks: KnownBlock[]): number {
+  return blocks.reduce(
     (total, block) =>
       total +
       (block.type === "markdown" ? slackExpandedBlockCount((block as { text: string }).text) : 1),
     0,
   );
-  if (expanded <= MAX_BLOCKS) return blocks;
+}
+
+export function hasRoomForSlackBlock(blocks: KnownBlock[]): boolean {
+  return expandedBlockTotal(blocks) < MAX_BLOCKS;
+}
+
+function fitSlackBlockLimit(blocks: KnownBlock[]): KnownBlock[] {
+  if (expandedBlockTotal(blocks) <= MAX_BLOCKS) return blocks;
   return blocks.map((block) =>
     block.type === "markdown"
       ? ({

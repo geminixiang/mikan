@@ -15,6 +15,7 @@ export interface BotResponseLogEntry {
   answer?: RunAnswer;
   platform?: PlatformName;
   slackBlocks?: object[];
+  suggestions?: readonly string[];
 }
 
 export function appendOfficeLog(office: Office, entry: ConversationLogMessage): void {
@@ -23,7 +24,7 @@ export function appendOfficeLog(office: Office, entry: ConversationLogMessage): 
 }
 
 export function appendBotResponseLog(office: Office, response: BotResponseLogEntry): void {
-  const { text, ts, threadTs, answer, platform, slackBlocks } = response;
+  const { text, ts, threadTs, answer, platform, slackBlocks, suggestions } = response;
   appendOfficeLog(office, {
     date: new Date().toISOString(),
     ts,
@@ -34,6 +35,7 @@ export function appendBotResponseLog(office: Office, response: BotResponseLogEnt
     isMessagingBot: true,
     platform,
     slackBlocks,
+    suggestions,
     ...answer,
   });
 }

@@ -51,6 +51,7 @@ export interface ConversationMessage {
 export interface ReplaceResponseOptions {
   createOverflowLink?: () => string;
   final?: boolean;
+  suggestions?: readonly string[];
 }
 
 export interface ConversationResponder {
@@ -73,6 +74,7 @@ export interface MessagingInfo {
   users: { id: string; userName: string; displayName: string }[];
   trustModel?: PlatformTrustModel;
   continuesInterruptedRuns?: boolean;
+  showsSuggestedReplies?: boolean;
   diagnostics?: {
     showUsageSummary?: boolean;
   };
@@ -217,6 +219,7 @@ export interface ConversationLogMessage {
   platform?: PlatformName;
   slackBlocks?: object[];
   slackInteraction?: Record<string, unknown>;
+  suggestions?: readonly string[];
   botId?: string;
   appId?: string;
   subtype?: string;

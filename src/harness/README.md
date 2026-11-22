@@ -32,6 +32,15 @@ answer is written once, by `finalizeRunResponse` with `{ final: true }`; the
 front projection never writes it, because two writers of the final message
 disagreed about attribution and progress and rewrote it up to three times.
 
+Suggested replies (ADR 0034) are split off at that one write: `suggestions.ts`
+owns the `↳` mark, the limit, and the prompt section, and `publishFinalResponse`
+passes the trailing marked lines as `suggestions` beside the text on every
+platform. The split only parses; whether a reply should have suggestions is the
+model's decision. The session keeps the reply as the model wrote it, so the
+lines are in the transcript and in run events, and absent from the chat and
+`log.jsonl`. The prompt section is added only for a platform whose
+`MessagingInfo` reports `showsSuggestedReplies`.
+
 Mechanical conventions belong to mikan, not the model. The presenter reacts
 `saluting_face` (eyes on GitHub) once when a run starts its first work tool, and
 `appendTriggerAttribution` owns the chat signature, replacing whatever

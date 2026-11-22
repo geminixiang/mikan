@@ -538,6 +538,43 @@ const guards: FactOwnerGuard[] = [
     ],
   },
   {
+    id: "suggestion-mark",
+    owner: "SUGGESTION_MARK in src/harness/suggestions.ts",
+    ownerFiles: ["src/harness/suggestions.ts"],
+    find: literalsMatching(/^↳$|↳ lines?\b|with ↳/, literalFragments),
+    copies: [
+      'const mark = "↳";',
+      "const marked = line.trim().startsWith('↳');",
+      "const hint = `End the reply with ↳ lines.`;",
+      'const hint = "one or two lines starting with ↳: what they would send next";',
+    ],
+    legitimate: [
+      "const { text, suggestions } = splitSuggestions(finalText);",
+      'import { SUGGESTED_REPLIES_PROMPT } from "./suggestions.js";',
+      "const detail = `${line}\\n  ↳ ${summary}`;",
+      "console.log(`${context} ↳ ${toolName}: ${label}`);",
+      'const arrow = "→";',
+    ],
+  },
+  {
+    id: "slack-suggested-reply-ids",
+    owner: "the block and action IDs in src/adapters/slack/suggested-replies.ts",
+    ownerFiles: ["src/adapters/slack/suggested-replies.ts"],
+    find: literalsMatching(/^suggested_repl(?:ies$|y_)/, literalFragments),
+    copies: [
+      'const id = "suggested_replies";',
+      "const tapped = action.action_id.startsWith('suggested_reply_');",
+      "const id = `suggested_reply_${index + 1}`;",
+      'const same = block.block_id === "suggested_replies";',
+    ],
+    legitimate: [
+      "const reply = suggestedReplyOf(action);",
+      'import { withSuggestedReplies } from "./suggested-replies.js";',
+      'const text = "Could not remove the suggested replies after a tap";',
+      "const shows = platform.showsSuggestedReplies;",
+    ],
+  },
+  {
     id: "tool-label-parameter",
     owner: "LABEL_PARAMETER in src/harness/tools/host-fn-tool.ts",
     ownerFiles: ["src/harness/tools/host-fn-tool.ts"],

@@ -72,6 +72,11 @@ interface ProgressiveStreamTransport {
   stop(messageId: string): Promise<void>;
 }
 
+export type ProgressiveMessageWriter = Pick<
+  ProgressiveRendererPlatform,
+  "post" | "update" | "postExtra"
+>;
+
 export interface ProgressiveRendererPlatform {
   label: string;
   maxLength: number;
@@ -102,6 +107,7 @@ export interface ProgressiveRendererPlatform {
   post: (text: string) => Promise<string>;
   update: (id: string, text: string) => Promise<void>;
   postExtra: (text: string, responseId: string | null) => Promise<string | number | void>;
+  withSuggestions?: (suggestions: readonly string[]) => ProgressiveMessageWriter;
   postDiagnostic?: (
     text: string,
     options: { style?: "muted" | "error" },

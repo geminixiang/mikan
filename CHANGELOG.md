@@ -13,6 +13,13 @@ change in a minor release.
 
 ### Added
 
+- Suggested replies on Slack (ADR 0034): a reply that hands the person something to use or choose
+  from ends with up to two buttons holding what they would most likely send next. A tap sends that
+  line as the tapping person's message and replaces the buttons with who tapped which line. The model writes them as lines
+  starting with `↳` at the end of its reply; mikan takes those lines off the final reply on every
+  platform, and `log.jsonl` records the reply without them, with the lines in a `suggestions`
+  field on Slack. The Slack system prompt gains a section for this; other platforms' prompts are
+  unchanged.
 - The `bash_background` tool (ADR 0033): the model starts a long shell command and gets a job ID at
   once, and when the command exits a message with its exit code and the path of its log arrives in
   the same conversation for the agent to answer. It works on Slack, Telegram, Discord, and

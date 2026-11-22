@@ -4,6 +4,7 @@ import { join, posix } from "node:path";
 import type { ConversationMessage } from "../types.js";
 import type { RuntimePathContext } from "../sandbox/types.js";
 import { formatSkillsForPrompt } from "./skills.js";
+import { SUGGESTED_REPLIES_PROMPT } from "./suggestions.js";
 import { officeKey } from "../office/index.js";
 import type { WorkspaceProjection, Office } from "../office/types.js";
 import { formatHistoryLine, stripTriggerSignature } from "../sessions/history-line.js";
@@ -358,7 +359,8 @@ mikan adds the \`_Triggered by …_\` signature to your final chat response; do 
 
 export function buildSystemPrompt(input: BuildSystemPromptOptions): string {
   const paths = buildRuntimePaths(input.workspacePath, input.office);
-  return `${buildContextPrompt(input, paths)}\n\n${buildWorkspaceSkillsPrompt(input, paths)}\n\n${buildOperatingPrompt(input, paths)}`;
+  const suggestedReplies = input.platform.showsSuggestedReplies ? SUGGESTED_REPLIES_PROMPT : "";
+  return `${buildContextPrompt(input, paths)}\n\n${buildWorkspaceSkillsPrompt(input, paths)}\n\n${buildOperatingPrompt(input, paths)}${suggestedReplies}`;
 }
 
 export function buildTurnInstructions(eventName: string | undefined): string {

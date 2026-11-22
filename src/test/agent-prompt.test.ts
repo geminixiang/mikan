@@ -9,14 +9,16 @@ import {
   listScratchFolders,
   resolveTriggerAttribution,
 } from "../harness/prompt.js";
+import { SUGGESTED_REPLIES_PROMPT } from "../harness/suggestions.js";
 import { normalizeAttachRuntimePath } from "../harness/tools/attach.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { resolveWorkspaceProjection } from "../office/projection.js";
 import { createGlobalSettingsFile } from "../settings/index.js";
+import type { MessagingInfo } from "../types.js";
 
 const NO_SCRATCH = { folders: [], omitted: 0 };
 
-const PLATFORM = {
+const PLATFORM: MessagingInfo = {
   name: "slack",
   formattingGuide: "",
   channels: [],
@@ -175,6 +177,28 @@ describe("sandbox environment description", () => {
 
   afterEach(() => {
     rmSync(stateDir, { recursive: true, force: true });
+  });
+
+  test("adds the suggested replies section only for a platform that shows them", () => {
+    const workspace = createWorkspace({ root: workspaceDir, stateDir });
+    const office = workspace.office(createOfficeAddress("slack", "C123"));
+    const build = (platform: MessagingInfo) =>
+      buildSystemPrompt({
+        workspacePath: workspaceDir,
+        office,
+        memory: "(no memory)",
+        platform,
+        skills: [],
+        projection: resolveWorkspaceProjection(office),
+        scratch: NO_SCRATCH,
+      });
+    const without = build(PLATFORM);
+
+    expect(without).not.toContain("Suggested replies");
+    expect(build({ ...PLATFORM, showsSuggestedReplies: false })).toBe(without);
+    expect(build({ ...PLATFORM, showsSuggestedReplies: true })).toBe(
+      `${without}${SUGGESTED_REPLIES_PROMPT}`,
+    );
   });
 
   test("leaves chat signatures and the clock to mikan and asks for signatures only on GitHub writes", () => {

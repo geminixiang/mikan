@@ -67,11 +67,17 @@ import {
   planSlackAdapterSession,
   planSlackEventAnchorRun,
   resolveSlackSessionKey,
+  SLACK_ACTION_TS_PREFIX,
   slackConversationKind,
 } from "./session.js";
 import { reportUserFacingError } from "../../observability/index.js";
 import { recordSlackUpdate } from "./update-diagnostics.js";
 import { renderSlackBlocks, resolveSlackMentions } from "./blocks.js";
+import {
+  suggestedReplyOf,
+  withTappedSuggestedReply,
+  withSuggestedReplies,
+} from "./suggested-replies.js";
 import { buildAutoReplyState, JEV_ADDRESSED_INSTRUCTIONS } from "./auto-reply-context.js";
 import { StreamStartLimiter } from "./stream-limits.js";
 import { errorMessage } from "../../unknown-values.js";
@@ -388,12 +394,17 @@ export class SlackMessagingBot implements MessagingBot {
     return resolveSlackMentions(text, this.users.values());
   }
 
-  async postMessage(channel: string, text: string, threadTs?: string): Promise<string> {
+  async postMessage(
+    channel: string,
+    text: string,
+    threadTs?: string,
+    suggestions?: readonly string[],
+  ): Promise<string> {
     return slackRetry(async () => {
       const payload = {
         channel,
         thread_ts: threadTs,
-        ...renderSlackBlocks(this.resolveMentions(text)),
+        ...withSuggestedReplies(renderSlackBlocks(this.resolveMentions(text)), suggestions),
       };
       const result = await this.webClient.chat.postMessage(payload);
       return result.ts as string;
@@ -501,9 +512,18 @@ export class SlackMessagingBot implements MessagingBot {
     });
   }
 
-  async updateMessage(channel: string, ts: string, text: string): Promise<void> {
+  async updateMessage(
+    channel: string,
+    ts: string,
+    text: string,
+    suggestions?: readonly string[],
+  ): Promise<void> {
     return slackRetry(async () => {
-      const payload = { channel, ts, ...renderSlackBlocks(this.resolveMentions(text)) };
+      const payload = {
+        channel,
+        ts,
+        ...withSuggestedReplies(renderSlackBlocks(this.resolveMentions(text)), suggestions),
+      };
       try {
         await this.webClient.chat.update(payload);
       } catch (error) {
@@ -630,7 +650,11 @@ export class SlackMessagingBot implements MessagingBot {
     text: string,
     ts: string,
     threadTs?: string,
-    { slackBlocks, answer }: { slackBlocks?: object[]; answer?: RunAnswer } = {},
+    {
+      slackBlocks,
+      answer,
+      suggestions,
+    }: { slackBlocks?: object[]; answer?: RunAnswer; suggestions?: readonly string[] } = {},
   ): void {
     appendBotResponseLog(this.workspace.office(createOfficeAddress("slack", channel)), {
       text,
@@ -639,6 +663,7 @@ export class SlackMessagingBot implements MessagingBot {
       answer,
       platform: "slack",
       slackBlocks,
+      suggestions,
     });
   }
 
@@ -658,6 +683,7 @@ export class SlackMessagingBot implements MessagingBot {
       connectorScope: this.teamId ? `slack:${this.teamId}` : undefined,
       trustModel: "membership",
       continuesInterruptedRuns: true,
+      showsSuggestedReplies: true,
       formattingGuide:
         '## Slack Formatting\nWrite standard Markdown/GFM: **bold**, _italic_, ~~strike~~, `code`, fenced code blocks, [links](url), lists, and pipe tables (rendered as native Slack tables).\nDo NOT use Slack mrkdwn syntax like *single-asterisk bold* or <url|label> links.\n## Slack Rendering\n- The Slack adapter renders responses natively from standard Markdown. Answer in normal Markdown/GFM.\n- Markdown pipe tables are rendered as native Slack tables.\n- For interactive elements (buttons, select menus), use the slack_blockkit tool; user interactions arrive as "[Slack action] <action_id>: <value>" messages.\n',
       channels: this.getAllChannels().map((c) => ({ id: c.id, name: c.name })),
@@ -1356,8 +1382,9 @@ export class SlackMessagingBot implements MessagingBot {
     const valueText = selectedTexts?.length
       ? selectedTexts.join(", ")
       : (selectedText ?? action.value ?? action.action_id);
-    const text = `[Slack action] ${action.action_id}: ${valueText}`;
-    const ts = `action:${Date.now()}`;
+    const suggestedReply = suggestedReplyOf(action);
+    const text = suggestedReply ?? `[Slack action] ${action.action_id}: ${valueText}`;
+    const ts = `${SLACK_ACTION_TS_PREFIX}${Date.now()}`;
 
     this.logToFile(channelId, {
       date: new Date().toISOString(),
@@ -1418,6 +1445,30 @@ export class SlackMessagingBot implements MessagingBot {
       };
       return this.handler.handleEvent(event, this, this.createContext(slackEvent));
     });
+    if (suggestedReply !== undefined) {
+      await this.showTappedSuggestedReply(channelId, body.message, {
+        userId,
+        text: suggestedReply,
+      });
+    }
+  }
+
+  private async showTappedSuggestedReply(
+    channelId: string,
+    message: SlackBlockActionBody["message"],
+    tap: { userId: string; text: string },
+  ): Promise<void> {
+    if (!message?.ts || !Array.isArray(message.blocks)) return;
+    try {
+      await this.updateMessageBlocks(
+        channelId,
+        message.ts,
+        message.text ?? "",
+        withTappedSuggestedReply(message.blocks, tap),
+      );
+    } catch (err) {
+      log.logWarning("Could not replace the suggested replies after a tap", errorMessage(err));
+    }
   }
 
   private async processAttachments(

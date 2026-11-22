@@ -7,6 +7,7 @@ interface Call {
   operation: string;
   id?: string;
   text?: string;
+  suggestions?: readonly string[];
 }
 
 function makeRenderer(
@@ -19,6 +20,8 @@ function makeRenderer(
     needsCanonicalRender?: (text: string) => boolean;
     flushIntervalMs?: number;
     prepareSource?: (text: string, working: boolean) => string;
+    showsSuggestions?: boolean;
+    suggestionsUpdate?: () => Promise<void>;
   } = {},
 ) {
   const calls: Call[] = [];
@@ -58,6 +61,23 @@ function makeRenderer(
       calls.push({ operation: "delete", id });
       await overrides.delete?.(id);
     },
+    withSuggestions: overrides.showsSuggestions
+      ? (suggestions) => ({
+          post: async (text) => {
+            const id = `message-${nextId++}`;
+            calls.push({ operation: "post", id, text, suggestions });
+            return id;
+          },
+          update: async (id, text) => {
+            calls.push({ operation: "update", id, text, suggestions });
+            await overrides.suggestionsUpdate?.();
+          },
+          postExtra: async (text, responseId) => {
+            calls.push({ operation: "extra", id: responseId ?? undefined, text, suggestions });
+            return `extra-${nextId++}`;
+          },
+        })
+      : undefined,
     needsCanonicalRender: overrides.needsCanonicalRender,
     showsPartialAnswer: kind === "buffered",
     stream:
@@ -427,5 +447,141 @@ describe.each<StreamKind>(["buffered", "native"])("required delivery: %s", (kind
     );
     failing = false;
     await expect(responder.replaceResponse("recovered", { final: true })).resolves.toBeUndefined();
+  });
+});
+
+describe("suggestions on the final answer", () => {
+  const suggestions = ["shorter", "formal"];
+
+  test("go with the only message, whether it is posted or updated", async () => {
+    const posted = makeRenderer("buffered", undefined, { showsSuggestions: true });
+    await posted.responder.replaceResponse("final", { final: true, suggestions });
+    expect(posted.calls).toEqual([
+      { operation: "post", id: "message-1", text: "final", suggestions },
+    ]);
+
+    const updated = makeRenderer("buffered", undefined, { showsSuggestions: true });
+    await updated.responder.replaceResponse("draft");
+    await updated.responder.replaceResponse("final", { final: true, suggestions });
+    expect(updated.calls.at(-1)).toEqual({
+      operation: "update",
+      id: "message-1",
+      text: "final",
+      suggestions,
+    });
+  });
+
+  test("go with the last part of a split answer only", async () => {
+    const { responder, calls } = makeRenderer("buffered", undefined, { showsSuggestions: true });
+
+    await responder.replaceResponse("one two three four five six seven", {
+      final: true,
+      suggestions,
+    });
+
+    expect(calls.length).toBeGreaterThan(1);
+    expect(calls.map((call) => call.suggestions)).toEqual([
+      ...calls.slice(1).map(() => undefined),
+      suggestions,
+    ]);
+    expect(calls.at(-1)?.operation).toBe("extra");
+  });
+
+  test("go with an existing continuation message when the final answer rewrites it", async () => {
+    const { responder, calls } = makeRenderer("buffered", undefined, { showsSuggestions: true });
+
+    await responder.replaceResponse("one two three four five six");
+    const partial = calls.length;
+    await responder.replaceResponse("one two three four five end", { final: true, suggestions });
+
+    const final = calls.slice(partial);
+    expect(final.at(-1)).toMatchObject({ operation: "update", suggestions });
+    expect(final.slice(0, -1).every((call) => call.suggestions === undefined)).toBe(true);
+  });
+
+  test("rewrite a streamed message that the final answer only extends", async () => {
+    const { responder, calls } = makeRenderer("native", undefined, { showsSuggestions: true });
+
+    await responder.replaceResponse("first half");
+    await responder.replaceResponse("first half, second", { final: true, suggestions });
+
+    expect(calls.map((call) => call.operation)).toEqual(["start", "append", "stop", "update"]);
+    expect(calls.at(-1)).toEqual({
+      operation: "update",
+      id: "stream-1",
+      text: "first half, second",
+      suggestions,
+    });
+  });
+
+  test("are written when the final answer equals what is already shown", async () => {
+    const { responder, calls } = makeRenderer("buffered", undefined, { showsSuggestions: true });
+
+    await responder.replaceResponse("final");
+    await responder.setWorking(false);
+    await responder.replaceResponse("final", { final: true, suggestions });
+
+    expect(calls.at(-1)).toEqual({
+      operation: "update",
+      id: "message-1",
+      text: "final",
+      suggestions,
+    });
+  });
+
+  test("are not lost to a redraw when the work ends", async () => {
+    let working = true;
+    const { responder, calls } = makeRenderer("buffered", undefined, {
+      showsSuggestions: true,
+      prepareSource: (text) => (working ? text : `${text}!`),
+    });
+
+    await responder.replaceResponse("final", { final: true, suggestions });
+    working = false;
+    await responder.setWorking(false);
+
+    expect(calls).toEqual([{ operation: "post", id: "message-1", text: "final", suggestions }]);
+  });
+
+  test("are written by the redraw that recovers a rejected final answer", async () => {
+    let reject = true;
+    const { responder, calls } = makeRenderer("buffered", undefined, {
+      showsSuggestions: true,
+      suggestionsUpdate: async () => {
+        if (reject) throw new Error("rejected");
+      },
+    });
+
+    await responder.replaceResponse("draft");
+    await expect(responder.replaceResponse("answer", { final: true, suggestions })).rejects.toThrow(
+      "rejected",
+    );
+    reject = false;
+    await responder.setWorking(false);
+
+    expect(calls.at(-1)).toEqual({
+      operation: "update",
+      id: "message-1",
+      text: "answer",
+      suggestions,
+    });
+    expect(calls.filter((call) => call.text === "answer")).toHaveLength(2);
+  });
+
+  test("do not follow a later response onto the message", async () => {
+    const { responder, calls } = makeRenderer("buffered", undefined, { showsSuggestions: true });
+
+    await responder.replaceResponse("final", { final: true, suggestions });
+    await responder.respond("more");
+
+    expect(calls.at(-1)).toEqual({ operation: "update", id: "message-1", text: "final\nmore" });
+  });
+
+  test("are ignored by a platform that cannot show them", async () => {
+    const { responder, calls } = makeRenderer("buffered");
+
+    await responder.replaceResponse("final", { final: true, suggestions });
+
+    expect(calls).toEqual([{ operation: "post", id: "message-1", text: "final" }]);
   });
 });

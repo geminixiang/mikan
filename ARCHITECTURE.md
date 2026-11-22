@@ -143,7 +143,7 @@ The `stop` magic word is exceptional: it runs before trigger policy and queueing
 
 A runner is conversation-scoped. Mutable platform tool packs are instantiated per runner and bound per serialized run, so platform state cannot leak across conversations. Each run receives one execution decision; its prompt sources, execution environment, and runtime path context cannot drift because callers do not resolve them independently. The prompt authority constructs a byte-stable system prompt; changing turn facts are added to user-turn instructions to preserve provider cache behavior.
 
-The presenter owns response delivery. The Conversation runtime invokes and settles the runner, but response streaming, replacement, diagnostics, usage display, and file upload are implemented through the runner's `ConversationResponder` interaction.
+The presenter owns response delivery. The Conversation runtime invokes and settles the runner, but response streaming, replacement, diagnostics, usage display, and file upload are implemented through the runner's `ConversationResponder` interaction. At the single write of the final answer it also splits off suggested replies, the trailing `↳` lines of the model's text, and passes them beside the text for the adapter to show as buttons or ignore ([ADR 0034](docs/adr/0034-suggested-replies.md)).
 
 ### Execution resolution
 

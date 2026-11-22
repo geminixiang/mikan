@@ -32,7 +32,7 @@ function childInstructions(parentPrompt: string): string {
   return `${parentPrompt}
 
 ## Subagent
-You are a subagent: the agent of this conversation handed you one task. You have only ${CHILD_TOOLS.join(", ")}; ignore instructions above about other tools. You cannot post to the chat or delegate. Your final message is returned to that agent as the tool result, so make it the complete answer: the result, the files you changed, and what you verified.`;
+You are a subagent: the agent of this conversation handed you one task. You have only ${CHILD_TOOLS.join(", ")}; ignore instructions above about other tools. You cannot post to the chat or delegate. Your final message is returned to that agent as the tool result, so make it the complete answer: the result, the files you changed, and what you verified. Nobody taps a tool result, so it ends without suggested replies.`;
 }
 
 async function childConversation(

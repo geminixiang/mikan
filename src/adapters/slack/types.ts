@@ -122,6 +122,7 @@ export interface SlackBlockAction {
 export interface SlackBlockActionBody {
   actions?: SlackBlockAction[];
   container?: { channel_id?: string; thread_ts?: string; message_ts?: string };
+  message?: { ts?: string; text?: string; blocks?: object[] };
   user?: { id?: string; username?: string; name?: string };
 }
 

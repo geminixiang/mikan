@@ -6,6 +6,7 @@ import { splitText } from "../shared.js";
 import type { HandleTooLongInput } from "../types.js";
 import { buildMrkdwnContextBlock, italicizeLines } from "./bot.js";
 import type { SlackEvent, SlackAdapterSessionPlan, SlackResponderBot } from "./types.js";
+import { SLACK_ACTION_TS_PREFIX } from "./session.js";
 import { renderSlackBlocks } from "./blocks.js";
 import { normalizeSlackCurrencyBold } from "./markdown.js";
 import { errorMessage } from "../../unknown-values.js";
@@ -93,6 +94,7 @@ class SlackResponseLifecycle {
   private pendingContinuation = "";
   private continuationAnchor: string | null = null;
   private continuationSent = "";
+  private shownSuggestions: readonly string[] | undefined;
 
   constructor(private readonly context: SlackResponseLifecycleOptions) {}
 
@@ -191,11 +193,32 @@ class SlackResponseLifecycle {
         text,
         responseId,
         replyInThread ? sessionPlan.rootTs : undefined,
-        { answer: { replyTo: event.ts, sessionKey: sessionPlan.sessionKey } },
+        {
+          answer: { replyTo: event.ts, sessionKey: sessionPlan.sessionKey },
+          suggestions: this.shownSuggestions,
+        },
       );
     }
     this.endStatus();
     await this.flushContinuation();
+  }
+
+  async sendWithSuggestions<T>(
+    suggestions: readonly string[],
+    send: (suggestions?: readonly string[]) => Promise<T>,
+  ): Promise<T> {
+    try {
+      const result = await send(suggestions);
+      this.shownSuggestions = suggestions;
+      return result;
+    } catch (err) {
+      if (isSlackMsgTooLong(err)) throw err;
+      log.logWarning(
+        "Slack rejected a reply with suggested replies; sending it without them",
+        errorMessage(err),
+      );
+      return send();
+    }
   }
 
   async handleTooLong({
@@ -300,6 +323,20 @@ export function createSlackResponseContext({
     update: (id, text) => slack.updateMessage(event.channel, id, text),
     postExtra: (text, responseId) =>
       slack.postInThread(event.channel, responseId ?? rootTs ?? "", text),
+    withSuggestions: (suggestions) => ({
+      post: (text) =>
+        lifecycle.sendWithSuggestions(suggestions, (shown) =>
+          slack.postMessage(event.channel, text, replyInThread ? rootTs : undefined, shown),
+        ),
+      update: (id, text) =>
+        lifecycle.sendWithSuggestions(suggestions, (shown) =>
+          slack.updateMessage(event.channel, id, text, shown),
+        ),
+      postExtra: (text, responseId) =>
+        lifecycle.sendWithSuggestions(suggestions, (shown) =>
+          slack.postMessage(event.channel, text, responseId ?? rootTs ?? "", shown),
+        ),
+    }),
     postDiagnostic: lifecycle.postThreadDiagnostic.bind(lifecycle),
     delete: lifecycle.deleteMessage.bind(lifecycle),
     deleteExtra: (id) => slack.deleteMessage(event.channel, String(id)),
@@ -311,7 +348,7 @@ export function createSlackResponseContext({
     uploadFile: (filePath, title) =>
       slack.uploadFile(event.channel, filePath, title, replyInThread ? rootTs : undefined),
     react: async (emoji) => {
-      if (!eventFilename && !isJobRunId(event.ts)) {
+      if (!eventFilename && !isJobRunId(event.ts) && !event.ts.startsWith(SLACK_ACTION_TS_PREFIX)) {
         await slack.addReaction(event.channel, event.ts, emoji);
       }
     },

@@ -30,6 +30,8 @@ export function isSlackThreadSessionKey(sessionKey: string): boolean {
   return parseSlackSessionKey(sessionKey).kind === "thread";
 }
 
+export const SLACK_ACTION_TS_PREFIX = "action:";
+
 export function slackConversationKind(channelId: string): ConversationKind {
   return channelId.startsWith("D") ? "direct" : "shared";
 }

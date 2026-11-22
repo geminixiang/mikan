@@ -27,6 +27,7 @@ import {
 } from "../observability/index.js";
 import { appendTriggerAttribution } from "./prompt.js";
 import { toRunEvent, toolLabel, toolResultText } from "./run-events.js";
+import { splitSuggestions } from "./suggestions.js";
 import { REACT_TOOL } from "./tools/react.js";
 
 import * as log from "../log.js";
@@ -248,14 +249,16 @@ async function publishFinalResponse(
   options?: FinalizeRunResponseOptions,
 ): Promise<void> {
   try {
+    const { text, suggestions } = splitSuggestions(finalText);
     const finalResponse = appendTriggerAttribution(
-      finalText,
+      text,
       runState.triggerAttribution,
       options?.triggerSessionLink,
     );
     await responder.replaceResponse(formatResponseWithToolProgress(finalResponse, runState), {
       createOverflowLink: options?.createOverflowLink,
       final: true,
+      suggestions: suggestions.length > 0 ? suggestions : undefined,
     });
   } catch (err) {
     const errMsg = errorMessage(err);
