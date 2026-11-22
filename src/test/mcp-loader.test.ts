@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -374,9 +374,11 @@ describe("loadMcpTools", () => {
     }
   }, 30_000);
 
-  it("bounds oversized results and spills the full result into the runtime workspace", async () => {
+  it("bounds oversized results and spills the full result beside the working directory", async () => {
     const result = await loadMcpTools({ test: { command: process.execPath, args: [serverPath] } });
-    const cwd = mkdtempSync(join(tmpdir(), "mikan-mcp-spill-"));
+    const root = mkdtempSync(join(tmpdir(), "mikan-mcp-spill-"));
+    const cwd = join(root, "conversation");
+    mkdirSync(cwd);
     try {
       const big = result.tools.find((tool) => tool.name === "mcp__test__big")!;
       const output = await callTool(big, {}, cwd);
@@ -389,7 +391,7 @@ describe("loadMcpTools", () => {
       expect(parsed.nextCursor).toBe("cursor-2");
       expect(parsed.items.at(-1)).toBe("…[+97 more items]");
       const spillPath = /Full result: (\S+)/.exec(notice!)?.[1];
-      expect(spillPath?.startsWith(join(cwd, ".mikan", "mcp-output"))).toBe(true);
+      expect(spillPath?.startsWith(join(root, ".mikan", "mcp-output"))).toBe(true);
       const spilled = JSON.parse(readFileSync(spillPath!, "utf-8"));
       expect(spilled.items).toHaveLength(100);
       const readTool = createReadTool();
@@ -402,7 +404,7 @@ describe("loadMcpTools", () => {
       expect(readText).not.toContain("exceeds");
       expect(readText).toContain('"total_count": 691');
     } finally {
-      rmSync(cwd, { recursive: true, force: true });
+      rmSync(root, { recursive: true, force: true });
       await result.dispose();
     }
   }, 30_000);

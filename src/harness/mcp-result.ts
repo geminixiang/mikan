@@ -129,7 +129,7 @@ async function spillFullResult(
   if (!env) return undefined;
   const { text, extension } = readableSpill(result);
   const path = await env.joinPath(
-    [env.cwd, ...SPILL_DIR, `${randomBytes(8).toString("hex")}.${extension}`],
+    [env.cwd, "..", ...SPILL_DIR, `${randomBytes(8).toString("hex")}.${extension}`],
     context,
   );
   if (!path.ok) return undefined;

@@ -31,9 +31,15 @@ In the Slack E2E workflow the same case failed in five of seven runs on 2026-11-
 
 - `bash` starts in `/workspace/<office key>`, and a relative path in `read`, `write`, `edit`, and `attach` resolves there. Before, they started in `/workspace`.
 - An attachment is listed as `attachments/<file>`.
-- An MCP result too large for the context is written under the conversation's directory (`.mikan/mcp-output/`), which is on the host and survives a container replacement; before, it was written under `/workspace`, inside the container only.
+- An MCP result too large for the context is still written to `/workspace/.mikan/mcp-output/`, inside the container only: the spill path is taken from the parent of the working directory, so a raw tool result does not land in an office directory that other public offices can read.
 - Absolute paths, which every earlier session used, work as before.
 
 ## Verification on Slack
 
 A local daemon built from this change, on the `oci` sandbox, was asked in a direct message on a real Slack workspace to create a file by a relative path, print the working directory, and attach the file by the same relative path. `write` created it in the conversation's directory, `bash` printed `/workspace/<office key>` and the file's content, and `attach` uploaded it.
+
+## Existing habits
+
+Read from a deployment's logs over a month, counts only: every path given to `read`, `write`, `edit`, and `attach` was absolute, none relative. Of the `bash` commands that began with `cd`, all but a handful named an absolute `/workspace` path; every use of `log.jsonl` named it by absolute path; no command used a relative `MEMORY.md`, and one in several thousand used a relative `skills/`. So the change of working directory meets almost no existing habit, and absolute paths, which sessions imitate from their own history, keep working.
+
+A file sent before the change is recorded in `log.jsonl` with a path relative to the workspace root. The prompt does not describe that field, and the model has been naming attachments by absolute path.

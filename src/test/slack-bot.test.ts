@@ -100,7 +100,7 @@ function createFakeWebApi(): SlackWebApi {
 interface SlackHarnessOptions {
   handler: MessagingEventHandler;
   workspace: Workspace;
-  auth?: { user_id: string; bot_id?: string };
+  auth?: { user_id: string; bot_id?: string; team_id?: string };
   members?: SlackMember[];
   channels?: SlackConversation[];
   fetch?: typeof globalThis.fetch;
@@ -226,6 +226,38 @@ class StalledSlackSocket extends FakeSlackSocket {
     this.connecting.resolve();
   }
 }
+
+describe("Slack OpenConnector scope", () => {
+  test("names the workspace Slack reported, and nothing when Slack reported none", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "slack-connector-scope-"));
+    const warnings = vi.spyOn(log, "logWarning").mockImplementation(() => {});
+    try {
+      const workspace = createWorkspace({ root: join(dir, "ws"), stateDir: join(dir, "state") });
+      const known = await startSlackHarness({
+        handler: makeHandler(),
+        workspace,
+        auth: { user_id: "B123", team_id: "T0123456789" },
+      });
+      expect(known.bot.getMessagingInfo().connectorScope).toBe("slack:T0123456789");
+      expect(warnings).not.toHaveBeenCalledWith(
+        "Slack did not return a workspace ID",
+        expect.anything(),
+      );
+      await known.bot.stop();
+
+      const unknown = await startSlackHarness({ handler: makeHandler(), workspace });
+      expect(unknown.bot.getMessagingInfo().connectorScope).toBeUndefined();
+      expect(warnings).toHaveBeenCalledWith(
+        "Slack did not return a workspace ID",
+        "conversations get no default OpenConnector token",
+      );
+      await unknown.bot.stop();
+    } finally {
+      warnings.mockRestore();
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
 
 describe("Slack startup", () => {
   test("stopping while the socket is still connecting ends start without an error", async () => {

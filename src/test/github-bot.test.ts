@@ -683,6 +683,7 @@ describe("GithubMessagingBot", () => {
   test("only collaborators with write access trigger, so the conversation trusts membership", async () => {
     const bot = await startedBot();
     expect(bot.getMessagingInfo().trustModel).toBe("membership");
+    expect(bot.getMessagingInfo().connectorScope).toBe("github");
     expect(bot.agentIdentity).toEqual({
       login: "Acme-Agent",
       email: "999+Acme-Agent@users.noreply.github.com",

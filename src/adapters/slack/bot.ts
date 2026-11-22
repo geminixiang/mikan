@@ -316,6 +316,12 @@ export class SlackMessagingBot implements MessagingBot {
     this.botUserId = auth.user_id as string;
     this.botId = typeof auth.bot_id === "string" ? auth.bot_id : null;
     this.teamId = typeof auth.team_id === "string" ? auth.team_id : null;
+    if (!this.teamId) {
+      log.logWarning(
+        "Slack did not return a workspace ID",
+        "conversations get no default OpenConnector token",
+      );
+    }
 
     await Promise.all([this.fetchUsers(), this.fetchChannels()]);
     if (this.stopped) return;

@@ -1,4 +1,4 @@
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { createServer, type RequestListener, type Server } from "node:http";
 import { BlockList } from "node:net";
 import { tmpdir } from "node:os";
@@ -20,7 +20,9 @@ let privateServer: Server;
 let publicBase = "";
 let privateBase = "";
 let privateHits = 0;
-const cwd = mkdtempSync(join(tmpdir(), "mikan-web-fetch-"));
+const root = mkdtempSync(join(tmpdir(), "mikan-web-fetch-"));
+const cwd = join(root, "conversation");
+mkdirSync(cwd);
 
 function listen(handler: RequestListener, host: string): Promise<Server> {
   const server = createServer(handler);
@@ -80,7 +82,7 @@ beforeAll(async () => {
 afterAll(() => {
   publicServer.close();
   privateServer.close();
-  rmSync(cwd, { recursive: true, force: true });
+  rmSync(root, { recursive: true, force: true });
 });
 
 async function fetchText(url: string, blocked = onlyIpv6Loopback) {
@@ -114,12 +116,12 @@ describe("web_fetch tool", () => {
     expect(await fetchText(`${publicBase}/api.json`)).toContain('{"latest":"2.4.0"}');
   });
 
-  test("bounds a large result and saves the whole one in the workspace", async () => {
+  test("bounds a large result and saves the whole one beside the working directory", async () => {
     const text = await fetchText(`${publicBase}/big.json`);
     expect(Buffer.byteLength(text)).toBeLessThanOrEqual(50 * 1024);
     expect(text).toContain('"latest":"9.9.9"');
     const spillPath = /Full result: (\S+)/.exec(text)?.[1];
-    expect(spillPath?.startsWith(cwd)).toBe(true);
+    expect(spillPath?.startsWith(join(root, ".mikan"))).toBe(true);
     expect(JSON.parse(readFileSync(spillPath!, "utf8")).versions).toHaveLength(5000);
   });
 
