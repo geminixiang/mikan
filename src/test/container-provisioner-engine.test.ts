@@ -1,6 +1,6 @@
 import { execFile, execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -40,6 +40,9 @@ describe.runIf(available)(`DockerContainerManager on ${ENGINE}`, () => {
     const logs = vi.spyOn(log, "logInfo").mockImplementation(() => {});
     try {
       await sandbox.provision(key, { mounts });
+      inContainer(name, "echo written > /workspace/office/from-sandbox");
+      expect(readFileSync(join(office, "from-sandbox"), "utf8").trim()).toBe("written");
+      expect(inContainer(name, "cat /workspace/MEMORY.md")).toBe("memory");
       inContainer(name, "echo kept > /root/marker");
       await sandbox.provision(key, { mounts });
       expect(inContainer(name, "cat /root/marker")).toBe("kept");

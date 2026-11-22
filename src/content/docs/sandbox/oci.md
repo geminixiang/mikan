@@ -41,6 +41,15 @@ mikan drives containers through the docker command set, which nerdctl (container
 
 On macOS every engine runs Linux in a VM, and a bind mount reaches the container only from a folder the VM shares; keep the workspace and `~/.mikan` under your home directory.
 
+### Who has to run mikan
+
+The sandbox container has no Linux capabilities, so its root can use an office directory only as that directory's owner. On Linux this means one of:
+
+- mikan runs as root with Docker or nerdctl, or
+- mikan runs as any user with a rootless engine such as Podman, which maps that user to the container's root.
+
+An unprivileged user on rootful Docker does not work: mikan removes the container it just created and reports that the sandbox cannot write the office. On macOS the engine's VM shares files without ownership, so any user works.
+
 ## Upgrading the sandbox image
 
 A managed container is disposable. Only its bind mounts (the conversation office, shared knowledge,

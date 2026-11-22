@@ -41,6 +41,15 @@ mikan は docker のコマンド体系でコンテナを操作します。nerdct
 
 macOS ではどのエンジンも VM 上で Linux を動かすため、bind mount は VM が共有するフォルダからしかコンテナに届きません。workspace と `~/.mikan` はホームディレクトリ配下に置いてください。
 
+### mikan を実行するユーザー
+
+サンドボックスのコンテナは Linux capability を持たないため、コンテナ内の root は office ディレクトリの所有者である場合にだけそのディレクトリを使えます。Linux では次のどちらかが必要です。
+
+- Docker または nerdctl を使い、mikan を root で実行する
+- Podman などの rootless エンジンを使い、任意のユーザーで mikan を実行する（そのユーザーがコンテナの root に対応付けられます）
+
+rootful な Docker を一般ユーザーで使う構成は動作しません。mikan は作成したコンテナを削除し、サンドボックスが office に書き込めないことを報告します。macOS ではエンジンの VM が所有者に関係なくファイルを共有するため、どのユーザーでも動作します。
+
 ## サンドボックスイメージの更新
 
 管理下の container は使い捨てです。bind mount（conversation office、共有 knowledge、vault file）だけが残り、`/root`、インストールしたパッケージ、`/etc` の変更など container 内のそれ以外の場所に書いたものは、container が置き換えられると消えます。残したいものは workspace に置いてください。

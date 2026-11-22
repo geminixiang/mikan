@@ -21,6 +21,13 @@ change in a minor release.
   container persist across sessions, which stopped being true when mikan began replacing containers
   on an image update.
 
+### Fixed
+
+- On Linux, an unprivileged user running mikan with rootful Docker or nerdctl got a sandbox that
+  could not enter its office: every file read and write failed with `EACCES`. mikan now checks the
+  mounts of a container it creates and reports the cause and the two fixes: run mikan as root, or
+  use a rootless engine such as Podman.
+
 ### Removed
 
 - The `host` and `container:<name>` sandboxes. `--sandbox=host` and `--sandbox=container:<name>`

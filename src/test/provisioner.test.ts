@@ -935,4 +935,34 @@ describe("DockerContainerManager", () => {
       ["network", "rm", "mikan-sandbox-net-slack-u123"],
     ]);
   });
+  test("checks that a new container can use its mounts before anything runs in it", async () => {
+    const engine = new FakeEngine();
+
+    await manager(engine).provision("slack-u123", {
+      mounts: [
+        { source: "/host/office", target: "/workspace/office" },
+        { source: "/host/public", target: "/workspace/public", readOnly: true },
+      ],
+    });
+
+    expect(engine.callsOf("exec")).toEqual([
+      ["exec", "mikan-sandbox-slack-u123", "test", "-w", "/workspace/office"],
+      ["exec", "mikan-sandbox-slack-u123", "test", "-r", "/workspace/public"],
+    ]);
+  });
+
+  test("a container that cannot use a mount is removed and the error says why", async () => {
+    const engine = new FakeEngine();
+    engine.failures.set("exec", new Error("Command failed: docker exec … test -w"));
+    const sandbox = manager(engine);
+    const mounts = [{ source: "/host/office", target: "/workspace/office" }];
+
+    await expect(sandbox.provision("slack-u123", { mounts })).rejects.toThrow(
+      /cannot write \/workspace\/office.*\/host\/office.*as root.*rootless/s,
+    );
+    expect(engine.containers.has("mikan-sandbox-slack-u123")).toBe(false);
+
+    await sandbox.provision("slack-u123", { mounts });
+    expect(engine.containers.has("mikan-sandbox-slack-u123")).toBe(true);
+  });
 });

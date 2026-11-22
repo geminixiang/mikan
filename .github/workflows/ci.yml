@@ -79,6 +79,12 @@ jobs:
           sudo tar -xzf "${archive}" -C /usr/local bin/nerdctl libexec/cni
           echo "ENGINE_PREFIX=sudo -E env PATH=$PATH" >> "$GITHUB_ENV"
 
+      # The sandbox container has no capabilities, so on a rootful engine its
+      # root can use a directory only when root owns it: mikan runs as root there.
+      - name: Run as root on rootful Docker
+        if: matrix.engine == 'docker'
+        run: echo "ENGINE_PREFIX=sudo -E env PATH=$PATH" >> "$GITHUB_ENV"
+
       - name: Pull test images
         run: |
           $ENGINE_PREFIX ${{ matrix.engine }} --version

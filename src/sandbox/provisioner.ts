@@ -325,6 +325,29 @@ export class DockerContainerManager {
       "sleep",
       "infinity",
     ]);
+    await this.assertMountsUsable(containerName, mounts);
+  }
+
+  private async assertMountsUsable(containerName: string, mounts: ContainerMount[]): Promise<void> {
+    for (const mount of mounts) {
+      const access = mount.readOnly ? "read" : "write";
+      try {
+        await this.run(["exec", containerName, "test", mount.readOnly ? "-r" : "-w", mount.target]);
+      } catch (cause) {
+        await this.forceRemoveContainer(
+          containerName,
+          `Container ${containerName} removed: it cannot ${access} ${mount.target}`,
+          `Failed to remove container ${containerName}`,
+        );
+        throw new Error(
+          `The sandbox cannot ${access} ${mount.target} (${mount.source} on the host). ` +
+            `Its container has no capabilities, so its root can use a directory only as the directory's owner. ` +
+            `Run mikan as root, or use a rootless container engine such as Podman (CONTAINER_ENGINE=podman), ` +
+            `which maps the user running mikan to the container's root.`,
+          { cause },
+        );
+      }
+    }
   }
 
   private effectiveLimits(containerKey: string): ResourceLimits | undefined {

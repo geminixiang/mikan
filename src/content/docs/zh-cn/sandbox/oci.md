@@ -41,6 +41,15 @@ mikan 通过 docker 指令集操作容器，nerdctl（containerd）、Podman、D
 
 在 macOS 上，每个引擎都是在 VM 里运行 Linux，bind mount 只能挂载 VM 共享的文件夹；请把 workspace 和 `~/.mikan` 放在家目录下。
 
+### 用哪个用户运行 mikan
+
+沙盒容器没有任何 Linux capability，因此容器内的 root 只有在自己是办公室目录的所有者时才能使用该目录。在 Linux 上需要满足其一：
+
+- 用 Docker 或 nerdctl，并以 root 运行 mikan；或
+- 用 Podman 这类 rootless 引擎，以任意用户运行 mikan（该用户会被映射为容器内的 root）。
+
+以普通用户搭配 rootful Docker 无法工作：mikan 会移除刚创建的容器，并报告沙盒无法写入办公室。macOS 上引擎的 VM 共享文件时不看所有者，任何用户都可以。
+
 ## 升级沙盒镜像
 
 受管理的容器可以随时丢弃。只有它的 bind mount（对话办公室、共享知识和 vault 文件）会保留；写在容器其他位置的内容，包括 `/root`、安装的软件包和 `/etc` 的修改，都会在容器被替换时消失。需要保留的内容请放在工作区。
