@@ -511,7 +511,7 @@ describe("ActorExecutionResolver image mode", () => {
       ],
     });
     expect(decision.env.id).toBe(`container:mikan-sandbox-${D123_OFFICE}`);
-    expect(decision.env.cwd).toBe("/workspace");
+    expect(decision.env.cwd).toBe(`/workspace/${D123_OFFICE}`);
   });
 
   test("a retired full override still gets the uniform office mounts", async () => {
@@ -547,6 +547,6 @@ describe("ActorExecutionResolver image mode", () => {
       ],
     });
     expect(decision.env.id).toBe(`container:mikan-sandbox-${D123_OFFICE}`);
-    expect(decision.env.cwd).toBe("/workspace");
+    expect(decision.env.cwd).toBe(`/workspace/${D123_OFFICE}`);
   });
 });

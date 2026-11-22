@@ -3,6 +3,8 @@ import { createAttachTool, normalizeAttachRuntimePath, withStagedRuntimeFile } f
 import type { SandboxResourceController } from "../../types.js";
 import type { EventStore } from "../../events/index.js";
 import type { BackgroundJobSink } from "../../events/jobs.js";
+import { posix } from "node:path";
+import { officeKey } from "../../office/index.js";
 import type { Office } from "../../office/types.js";
 import { createBashBackgroundTool } from "./bash-background.js";
 import { createEventTool } from "./event.js";
@@ -76,7 +78,11 @@ export function createMikanTools(
         runtimeWorkspaceRoot,
       });
       setUploadFunction(async (filePath, title) => {
-        const runtimePath = normalizeAttachRuntimePath(filePath, runtimeWorkspaceRoot);
+        const runtimePath = normalizeAttachRuntimePath(
+          filePath,
+          runtimeWorkspaceRoot,
+          posix.join(runtimeWorkspaceRoot, officeKey(address)),
+        );
         await withStagedRuntimeFile(toolContext.env(), runtimePath, (stagedPath) =>
           responder.uploadFile(stagedPath, title),
         );

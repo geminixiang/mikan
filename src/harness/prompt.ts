@@ -4,6 +4,7 @@ import { join, posix } from "node:path";
 import type { ConversationMessage } from "../types.js";
 import type { RuntimePathContext } from "../sandbox/types.js";
 import { formatSkillsForPrompt } from "./skills.js";
+import { officeKey } from "../office/index.js";
 import type { WorkspaceProjection, Office } from "../office/types.js";
 import { formatHistoryLine, stripTriggerSignature } from "../sessions/history-line.js";
 import type { BuildSystemPromptOptions, ScratchListing } from "./types.js";
@@ -50,7 +51,13 @@ async function collectMessageAttachments(
     }
   }
 
-  return { imageAttachments, nonImagePaths };
+  const conversationPath = posix.join(workspacePath, officeKey(message.address));
+  return {
+    imageAttachments,
+    nonImagePaths: nonImagePaths.map((path) =>
+      path.startsWith(`${conversationPath}/`) ? path.slice(conversationPath.length + 1) : path,
+    ),
+  };
 }
 
 const SCRATCH_LISTING_LIMIT = 30;
@@ -154,10 +161,10 @@ export function getMemory(projection: WorkspaceProjection): string {
   return parts.length > 0 ? parts.join("\n\n") : "(no working memory yet)";
 }
 
-function buildEnvDescription(workspaceRoot: string): string {
+function buildEnvDescription(workspaceRoot: string, conversationPath: string): string {
   return `You are running inside a managed per-conversation container.
 - Runtime workspace root: ${workspaceRoot}
-- Bash commands start in: ${workspaceRoot}
+- Bash commands start in this conversation's directory, ${conversationPath}, and relative paths in every tool resolve there
 - Install tools with the image's package manager
 - Only files under ${workspaceRoot} persist; installed packages and anything else in the container are discarded when the sandbox image is updated`;
 }
@@ -179,7 +186,7 @@ function mappingTable(rows: string[], empty: string): string {
 
 function buildContextPrompt(input: BuildSystemPromptOptions, paths: RuntimePromptPaths): string {
   const { platform, projection } = input;
-  const { workspaceRoot, scratchPath } = paths;
+  const { workspaceRoot, conversationPath, scratchPath } = paths;
   const readable = new Set(projection.readableConversationIds);
   const channelMappings = mappingTable(
     platform.channels.filter((c) => readable.has(c.id)).map((c) => `${c.id}\t#${c.name}`),
@@ -189,7 +196,7 @@ function buildContextPrompt(input: BuildSystemPromptOptions, paths: RuntimePromp
     platform.users.map((u) => `${u.id}\t@${u.userName}\t${u.displayName}`),
     "(no users loaded)",
   );
-  const envDescription = buildEnvDescription(workspaceRoot);
+  const envDescription = buildEnvDescription(workspaceRoot, conversationPath);
   const slackBlockKitInstructions =
     platform.name === "slack"
       ? `

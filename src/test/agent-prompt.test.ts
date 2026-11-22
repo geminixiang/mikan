@@ -131,34 +131,34 @@ describe("turn instructions", () => {
 });
 
 describe("attach path validation", () => {
-  test("resolves relative attach paths from the runtime workspace", () => {
-    expect(normalizeAttachRuntimePath("gpt-5-mini.md", "/workspace")).toBe(
-      "/workspace/gpt-5-mini.md",
+  test("resolves relative attach paths from the conversation directory", () => {
+    expect(normalizeAttachRuntimePath("report.md", "/workspace", "/workspace/C123")).toBe(
+      "/workspace/C123/report.md",
     );
   });
 
   test("keeps absolute attach paths inside the runtime workspace", () => {
-    expect(normalizeAttachRuntimePath("/workspace/C123/report.txt", "/workspace")).toBe(
-      "/workspace/C123/report.txt",
-    );
+    expect(
+      normalizeAttachRuntimePath("/workspace/C123/report.txt", "/workspace", "/workspace/C123"),
+    ).toBe("/workspace/C123/report.txt");
   });
 
   test("rejects parent traversal in attach paths", () => {
-    expect(() => normalizeAttachRuntimePath("../outside.txt", "/workspace")).toThrow(
-      "parent-directory traversal",
-    );
     expect(() =>
-      normalizeAttachRuntimePath("/workspace/C123/../outside.txt", "/workspace"),
+      normalizeAttachRuntimePath("../outside.txt", "/workspace", "/workspace/C123"),
+    ).toThrow("parent-directory traversal");
+    expect(() =>
+      normalizeAttachRuntimePath("/workspace/C123/../outside.txt", "/workspace", "/workspace/C123"),
     ).toThrow("parent-directory traversal");
   });
 
   test("rejects absolute paths outside the runtime workspace", () => {
-    expect(() => normalizeAttachRuntimePath("/etc/passwd", "/workspace")).toThrow(
-      "runtime workspace",
-    );
-    expect(() => normalizeAttachRuntimePath("/workspace-other/file.txt", "/workspace")).toThrow(
-      "runtime workspace",
-    );
+    expect(() =>
+      normalizeAttachRuntimePath("/etc/passwd", "/workspace", "/workspace/C123"),
+    ).toThrow("runtime workspace");
+    expect(() =>
+      normalizeAttachRuntimePath("/workspace-other/file.txt", "/workspace", "/workspace/C123"),
+    ).toThrow("runtime workspace");
   });
 });
 
@@ -233,7 +233,7 @@ describe("sandbox environment description", () => {
     expect(prompt).not.toMatch(/sessions\//);
   });
 
-  test("tells the agent bash starts in the runtime workspace root, not mikan's own cwd", () => {
+  test("tells the agent bash and relative paths start in the conversation's directory", () => {
     const workspace = createWorkspace({ root: workspaceDir, stateDir });
     const office = workspace.office(createOfficeAddress("slack", "C123"));
     const projection = resolveWorkspaceProjection(office);
@@ -247,8 +247,9 @@ describe("sandbox environment description", () => {
       scratch: NO_SCRATCH,
     });
 
-    expect(prompt).toContain(`Bash commands start in: ${workspaceDir}`);
-    expect(prompt).not.toContain(`Bash commands start in: ${process.cwd()}`);
+    expect(prompt).toContain(
+      `Bash commands start in this conversation's directory, ${workspaceDir}/${office.key}, and relative paths in every tool resolve there`,
+    );
   });
 
   test("tells the agent a managed container keeps only its workspace across image updates", () => {

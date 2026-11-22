@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { buildPromptPayload } from "../harness/prompt.js";
+import { officeKey } from "../office/index.js";
 import type { ConversationMessage } from "../types.js";
 import { createMountedRuntimePathContext } from "../sandbox/utils.js";
 
@@ -64,5 +65,14 @@ describe("buildPromptPayload", () => {
 
     expect(payload.imageAttachments).toEqual([]);
     expect(payload.userMessage).toContain("/workspace/C123/attachments/notes.txt");
+  });
+
+  test("lists an attachment in the conversation's directory by its path from there", async () => {
+    const localPath = `${officeKey(makeMessage("").address)}/attachments/notes.txt`;
+
+    const payload = await buildPromptPayload(makeMessage(localPath), "/workspace");
+
+    expect(payload.userMessage).toContain("<slack_attachments>\nattachments/notes.txt\n");
+    expect(payload.userMessage).not.toContain("/workspace/");
   });
 });

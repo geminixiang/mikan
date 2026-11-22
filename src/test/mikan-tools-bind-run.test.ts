@@ -1,10 +1,10 @@
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { EventStore } from "../events/index.js";
 import { createMikanTools } from "../harness/tools/index.js";
-import { createOfficeAddress } from "../office/index.js";
+import { createOfficeAddress, officeKey } from "../office/index.js";
 import { NodeExecutionEnv } from "@earendil-works/pi-durable/env/node";
 import type { ConversationResponder } from "../types.js";
 import { runTestTool } from "./tool-api.js";
@@ -49,7 +49,9 @@ describe("createMikanTools bindRun", () => {
     const { attach, root: workspace } = boundAttachTool(async (path, title) => {
       uploaded = { content: readFileSync(path, "utf8"), title };
     });
-    writeFileSync(join(workspace, "report.txt"), "hello");
+    const conversationDir = join(workspace, officeKey(address));
+    mkdirSync(conversationDir);
+    writeFileSync(join(conversationDir, "report.txt"), "hello");
 
     await runTestTool(attach, { label: "share", path: "report.txt" });
 

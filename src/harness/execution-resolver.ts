@@ -25,7 +25,7 @@ export class ActorExecutionResolver {
     const pathContext = getSandboxPathContext(this.workspace.root);
     const env = createContainerExecutionEnv({
       container: plan.container,
-      cwd: pathContext.runtimeWorkspaceRoot,
+      cwd: posix.join(pathContext.runtimeWorkspaceRoot, officeKey(context.address)),
       env: plan.env,
       ensureReady: this.buildEnsureReadyCallback(plan, context.address.conversationId),
       markUsed: () => this.provisioner?.markUsed(plan.resourceKey),

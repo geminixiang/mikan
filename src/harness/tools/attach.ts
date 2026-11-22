@@ -61,13 +61,17 @@ function hasParentTraversal(path: string): boolean {
   return path.split(/[\\/]/).some((segment) => segment === "..");
 }
 
-export function normalizeAttachRuntimePath(filePath: string, runtimeWorkspaceRoot: string): string {
+export function normalizeAttachRuntimePath(
+  filePath: string,
+  runtimeWorkspaceRoot: string,
+  cwd: string,
+): string {
   if (hasParentTraversal(filePath)) {
     throw new Error("Cannot attach files: parent-directory traversal is not allowed");
   }
 
   const runtimeRoot = posix.resolve(runtimeWorkspaceRoot);
-  const runtimePath = posix.resolve(runtimeRoot, filePath);
+  const runtimePath = posix.resolve(cwd, filePath);
   const runtimeRelativePath = posix.relative(runtimeRoot, runtimePath);
   if (
     runtimeRelativePath === ".." ||

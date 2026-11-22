@@ -8,13 +8,14 @@ import { createMountedRuntimePathContext } from "../sandbox/utils.js";
 
 export function localExecution(workspace: Workspace): RunnerExecutionContext {
   const pathContext = createMountedRuntimePathContext(workspace.root, workspace.root);
-  const env = new NodeExecutionEnv({ cwd: workspace.root });
+  let env: NodeExecutionEnv | undefined;
   return {
     env: () => env,
-    resolveForRun: async (context) => ({
-      pathContext,
-      projection: resolveWorkspaceProjection(workspace.office(context.address)),
-    }),
+    resolveForRun: async (context) => {
+      const office = workspace.office(context.address);
+      env = new NodeExecutionEnv({ cwd: office.dir });
+      return { pathContext, projection: resolveWorkspaceProjection(office) };
+    },
   };
 }
 
