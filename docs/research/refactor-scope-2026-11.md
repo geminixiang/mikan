@@ -19,14 +19,14 @@ Evidence used during the review: [memory-capture-removal-2026-11.md](memory-capt
 
 ## Removed
 
-| Item                                                                | Note                                                                                                          |
-| ------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- |
-| `jev_browser`                                                       | The model uses the `agent-browser` CLI and its version-matched skill instead (browser-tool-vs-cli-2026-11.md) |
-| `host` and `container:` sandboxes                                   | Only `oci:` remains; tests need a local execution env of their own                                            |
-| Embedder package interface                                          | `src/index.ts` exports and `deploy/examples/embedder`; the package becomes the CLI                            |
-| Slack assistant pane                                                | Needs a paid plan; hardcoded greeting and suggested prompts. Removed 2026-11-11; the working status stays     |
-| `/sandbox` command                                                  | Status and boost for people; the agent keeps its `sandbox` tool. Removed 2026-11-11 with `sandbox.boost`      |
-| The prompt line telling the model to use `jev` "whenever" it judges |                                                                                                               |
+| Item                                                                | Note                                                                                                                                                                                    |
+| ------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `jev_browser`                                                       | The model uses the `agent-browser` CLI and its version-matched skill instead (browser-tool-vs-cli-2026-11.md)                                                                           |
+| `host` and `container:` sandboxes                                   | Only `oci:` remains; tests need a local execution env of their own                                                                                                                      |
+| Embedder package interface                                          | `src/index.ts` exports and `deploy/examples/embedder`; the package becomes the CLI. Removed 2026-11-22 ([embedder-interface-removal-2026-11.md](embedder-interface-removal-2026-11.md)) |
+| Slack assistant pane                                                | Needs a paid plan; hardcoded greeting and suggested prompts. Removed 2026-11-11; the working status stays                                                                               |
+| `/sandbox` command                                                  | Status and boost for people; the agent keeps its `sandbox` tool. Removed 2026-11-11 with `sandbox.boost`                                                                                |
+| The prompt line telling the model to use `jev` "whenever" it judges |                                                                                                                                                                                         |
 
 ## Redesigned
 
@@ -35,6 +35,22 @@ Evidence used during the review: [memory-capture-removal-2026-11.md](memory-capt
 | Background work          | Replace `start_task`/`task_status`, the Jev task-intent classifier and its canned replies with background shell jobs in the same session, modeled on Claude Code's background commands and `pi-bg-bash`: start a job, keep talking, the job's exit and output tail wake the agent. `event` stays for schedules that survive restarts |
 | Identity and credentials | Credentials belong to the person, not the office: personal secrets injected into the sandbox (the Vault, its portal renamed from `/login` to something like `/secret` or `/connector`), personal MCP servers connected with API keys or OAuth through `pi-mcp`, OpenConnector both auto-provisioned and added by hand                |
 | `slack_blockkit`         | Keep only for interactive elements (buttons, menus); ordinary formatting is already Markdown rendered by the adapter                                                                                                                                                                                                                 |
+
+## Order
+
+The owner's instruction on 2026-11-22 was to simplify the whole design and keep the core robust. That is this scope, finished deletions first, so that each later change has less to preserve. Robustness adds no machinery: each item's acceptance eval carries the failure paths it touches (a restart mid-run, a stopped container, a replayed tool call), and only what a baseline shows broken is fixed.
+
+| #   | Item                                                                                            | Why here                                                                                      |
+| --- | ----------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 1   | Embedder package interface                                                                      | Pure deletion; afterwards no exported type is a promise                                       |
+| 2   | Runtime services that were optional only for embedders                                          | Follows from 1; found with `npm run knip:unused`                                              |
+| 3   | `host` and `container:` sandboxes                                                               | The largest deletion; tests first need a local execution env of their own                     |
+| 4   | Background jobs ([background-jobs-2026-11.md](background-jobs-2026-11.md), C1)                  | The only item that adds code, so it lands on the smaller base; removes the `start_task` stack |
+| 5   | `slack_blockkit` for interactive elements only; the `jev` "whenever" prompt line                | Small prompt and tool changes                                                                 |
+| 6   | Identity and credentials                                                                        | The widest redesign; needs its own research                                                   |
+| 7   | Behavior-changing candidates left in [simplify-modules-2026-10.md](simplify-modules-2026-10.md) | Its line numbers are stale; rerun `knip:unused` and `duplication` after each deletion above   |
+
+Items 3 to 6 change the path a Slack message takes, so each needs the owner's approval for a run of the Slack E2E workflow. Item 4 also needs production `start_task` counts.
 
 ## Open
 

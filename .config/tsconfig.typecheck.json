@@ -5,11 +5,8 @@
     "declaration": false,
     "declarationMap": false,
     "sourceMap": false,
-    "inlineSources": false,
-    "paths": {
-      "@geminixiang/mikan": ["../src/index.ts"]
-    }
+    "inlineSources": false
   },
-  "include": ["../src/**/*.ts", "../e2e/**/*.ts", "../deploy/examples/embedder/**/*.ts"],
-  "exclude": ["../src/content.config.ts", "../deploy/examples/embedder/index.d.ts"]
+  "include": ["../src/**/*.ts", "../e2e/**/*.ts"],
+  "exclude": ["../src/content.config.ts"]
 }

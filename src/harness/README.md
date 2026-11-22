@@ -224,7 +224,7 @@ Jev models whose provider has a key, OpenRouter first, so a deployment picks its
 Jev source with the key it holds. `main.ts` hands it the daemon's `MikanModels`
 through `useJevModels`, so a `models.json` entry that gives a built-in provider
 only a `baseUrl` and `apiKey`, as Pi documents for proxies, sends Jev through
-that proxy with that key. Without that call, as in an embedder, `jev.ts` builds
+that proxy with that key. Without that call, as in a test, `jev.ts` builds
 pi-ai's built-in catalog with mikan's `readEnv` auth context. `useJevModels` is
 a process-wide binding because the five call sites span adapters and harness and
 none of them otherwise receives `MikanModels`. `evaluateWithJev` is a

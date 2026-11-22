@@ -7,14 +7,13 @@ description: mikan 在平台、运行时、框架、会话、执行、vault 与�
 
 ## 稳定性级别
 
-| 级别             | 含义                                | 兼容性预期                           |
-| ---------------- | ----------------------------------- | ------------------------------------ |
-| Public           | 被 npm 使用方导入                   | 保持不变或有意进行版本管理           |
-| Host integration | 用于嵌入运行时或添加平台/运行时后端 | 只要该集成存在就保持不变             |
-| Wire / persisted | 存储在磁盘上或跨进程/网络边界发送   | 显式迁移；读取方应容忍受支持的旧格式 |
-| Internal         | 连接 mikan CLI 内部的模块           | 在协调好调用点和测试的情况下可以更改 |
+| 级别             | 含义                              | 兼容性预期                           |
+| ---------------- | --------------------------------- | ------------------------------------ |
+| Host integration | 用于添加平台或运行时后端          | 只要该集成存在就保持不变             |
+| Wire / persisted | 存储在磁盘上或跨进程/网络边界发送 | 显式迁移；读取方应容忍受支持的旧格式 |
+| Internal         | 连接 mikan CLI 内部的模块         | 在协调好调用点和测试的情况下可以更改 |
 
-`src/index.ts` 是一份显式的导出清单，而非通配符重新导出，并且 `src/test/public-api.test.ts` 会对其做快照，因此意外新增会导致 CI 失败。它只导出嵌入者需要的部分；harness、session 与 sandbox 的内部实现不属于包接口。
+npm 包就是 `mikan` CLI。它不发布任何模块入口点，因此没有哪个 TypeScript 导出构成兼容性承诺；`package.json` 一旦新增入口点，`src/test/source-guards.boundaries.test.ts` 就会失败。
 
 ## 边界地图
 
@@ -76,24 +75,11 @@ flowchart TD
 
 ## 1. 包接口
 
-npm 入口点是 `@geminixiang/mikan`，由 `src/index.ts` 实现。
-
-### 受支持的入口点分组
-
-| 分组                 | 主要符号                                                                                                   | 使用方                                                          |
-| -------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
-| Runtime embedding    | `createConversationRuntime`、`ConversationRuntime`、`ConversationRuntimeOptions`                           | 提供平台与执行依赖的主机                                        |
-| Office and workspace | `createWorkspace`、`createOfficeAddress`、`officeKey`、`Workspace`、`Office`、`OfficeAddress`、`OfficeKey` | 任何嵌入者：`createConversationRuntime` 需要一个 `Workspace` 值 |
-| Platform contract    | `MessagingBot`、`ConversationEvent`、`ConversationContext`、`ConversationResponder`、`MessagingInfo`       | 平台适配器与嵌入者                                              |
-| Commands             | `CommandHandler`、`CommandContext`、`CommandServices`、`defaultCommandHandlers`                            | 在默认命令之外添加确定性命令的主机                              |
-| Execution            | `SandboxConfig`                                                                                            | 选择执行环境的主机                                              |
-| Models               | `MikanModels`、`CreateMikanModelsOptions`                                                                  | 自行提供模型列表的主机                                          |
-
-只有包 `exports` 映射声明的路径是公开路径。导入其他 `dist/` 生成路径或 `src/` 源码路径均不受支持。
+npm 包 `@geminixiang/mikan` 安装 `mikan` 命令（`dist/main.js`），不导出任何模块：`import "@geminixiang/mikan"` 会以 `ERR_PACKAGE_PATH_NOT_EXPORTED` 失败，包里也不带类型声明。运维者可以依赖的是 CLI、`settings.json`、`mikan.env` 以及 `~/.mikan` 下的状态布局。下面的接口连接的是 CLI 内部的模块。
 
 ## 2. 平台接收与响应接口
 
-来源：`src/types.ts`（由 `src/index.ts` 重新导出）。
+来源：`src/types.ts`。
 
 ### `ConversationEvent`
 
@@ -362,7 +348,7 @@ Admin 端点涵盖对话清单/状态/用量、全局与对话设置、模型、
 
 ## 契约测试矩阵
 
-这些测试套件保护的是跨归属契约，而不是单个 helper。更改某个缝隙时，请一起运行它所在行的所有套件；如果更改跨越多行，就运行它们的并集。Public、持久化或 wire 更改还需要运行完整的 `npm test`。
+这些测试套件保护的是跨归属契约，而不是单个 helper。更改某个缝隙时，请一起运行它所在行的所有套件；如果更改跨越多行，就运行它们的并集。持久化或 wire 更改还需要运行完整的 `npm test`。
 
 | 契约行                       | 一起运行的测试                                                                                                                                                                                                        | 该行保护的内容                                                                                         |
 | ---------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ |
@@ -375,7 +361,7 @@ Admin 端点涵盖对话清单/状态/用量、全局与对话设置、模型、
 | 信任、vault 与 portal 安全   | `src/test/vault-policy.test.ts`、`src/test/vault.test.ts`、`src/test/login.test.ts`、`src/test/oauth-link-server.test.ts`、`src/test/token-store.test.ts`                                                             | `trustModel` 策略、身份密钥查找、显式的凭证配置、login/OAuth token 边界，以及禁用时的 portal 行为      |
 | 设置与 live runner 缓存      | `src/test/settings-apply.test.ts`、`src/test/settings.test.ts`、`src/test/model-command.test.ts`、`src/test/admin-portal.test.ts`                                                                                     | 写入缝隙的顺序、叶级设置合并、busy/stale 结果，以及命令/admin 与磁盘、缓存 runner 的一致               |
 | 事件文件调度 wire 格式       | `src/test/event-format.test.ts`、`src/test/event-tool.test.ts`、`src/test/events.test.ts`                                                                                                                             | 构建器/解析器兼容性、旧版读取、队列满时的行为、路由，以及删除/保留的顺序                               |
-| 公开包边界                   | `src/test/public-api.test.ts`、`src/test/embedder-example.test.ts`、`src/test/boot.test.ts`                                                                                                                           | Export map 的使用方、嵌入构建，以及 CLI 启动/flag 语法                                                 |
+| 公开包边界                   | `src/test/source-guards.boundaries.test.ts`、`src/test/boot.test.ts`                                                                                                                                                  | `package.json` 没有模块入口点，以及 CLI 启动/flag 语法                                                 |
 
 做聚焦运行时，把确切的文件传给 Vitest，例如：
 
@@ -385,7 +371,7 @@ npm test -- src/test/session-key.test.ts src/test/session-runtime.test.ts src/te
 
 ## 变更流程
 
-更改缝隙之前，先把它归类为 `Public`、`Host integration`、`Wire / persisted` 或 `Internal`，然后核实：
+更改缝隙之前，先把它归类为 `Host integration`、`Wire / persisted` 或 `Internal`，然后核实：
 
 1. 生产者和消费者仍使用同一个规范的类型、解析器、构建器或端口。
 2. 身份、信任、路径、并发、生命周期与顺序语义都写在本页，并由对应的契约行覆盖。

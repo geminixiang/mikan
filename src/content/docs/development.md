@@ -25,7 +25,7 @@ npm run build
 | `src/content/docs/`       | This documentation site (Starlight), plus the `ja/`, `zh-cn/`, and `zh-tw/` locales |
 | `src/tsconfig.build.json` | The build's TypeScript project; the root `tsconfig.json` covers editor tooling      |
 | `.config/`                | Tool configuration: Astro, Vitest (unit and E2E), oxlint, oxfmt                     |
-| `deploy/`                 | Deployment assets: `pm2/`, `docker/`, and `examples/` (embedder, bridges)           |
+| `deploy/`                 | Deployment assets: `pm2/`, `docker/`, and `examples/` (Slack app manifests)         |
 | `e2e/`                    | Real-platform end-to-end suites, excluded from `npm test`                           |
 | `docs/adr/`               | Architecture decision records                                                       |
 | `scripts/`                | Maintenance and verification scripts invoked from npm scripts                       |

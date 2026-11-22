@@ -9,12 +9,11 @@ description: mikan の platform、runtime、harness、session、execution、vaul
 
 | レベル           | 意味                                                              | 互換性の期待                                                  |
 | ---------------- | ----------------------------------------------------------------- | ------------------------------------------------------------- |
-| Public           | npm consumers によって import される                              | 保持するか、意図的にバージョン管理する                        |
-| Host integration | runtime を埋め込む、または platform/runtime backend を追加する    | integration が存在する限り保持する                            |
+| Host integration | platform または runtime backend を追加する                        | integration が存在する限り保持する                            |
 | Wire / persisted | ディスクに保存されるか、プロセス/ネットワーク境界を越えて送られる | 明示的に移行する。reader はサポート対象の古い形式を許容すべき |
 | Internal         | mikan CLI 内部のモジュールを接続する                              | call sites と tests を協調させれば変更してよい                |
 
-`src/index.ts` は wildcard の re-export ではなく明示的な export リストで、`src/test/public-api.test.ts` がそれを snapshot するため、意図しない追加は CI で失敗します。embedder に必要なものだけを export し、harness、session、sandbox の内部実装はパッケージのインターフェースに含めません。
+npm パッケージは `mikan` CLI です。module のエントリポイントを公開しないため、TypeScript の export は互換性の約束になりません。`package.json` にエントリポイントが増えると `src/test/source-guards.boundaries.test.ts` が失敗します。
 
 ## 境界マップ
 
@@ -76,24 +75,11 @@ runtime は調整役です。platform は harness の永続化を知ってはな
 
 ## 1. パッケージインターフェース
 
-npm のエントリポイントは `@geminixiang/mikan` で、`src/index.ts` によって実装されています。
-
-### サポートされるエントリポイントグループ
-
-| グループ            | 主なシンボル                                                                                               | Consumer                                                                     |
-| ------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
-| Runtime embedding   | `createConversationRuntime`、`ConversationRuntime`、`ConversationRuntimeOptions`                           | platform と execution の依存を供給する host                                  |
-| Office と workspace | `createWorkspace`、`createOfficeAddress`、`officeKey`、`Workspace`、`Office`、`OfficeAddress`、`OfficeKey` | すべての embedder。`createConversationRuntime` は `Workspace` を必要とします |
-| Platform contract   | `MessagingBot`、`ConversationEvent`、`ConversationContext`、`ConversationResponder`、`MessagingInfo`       | platform adapters と embedders                                               |
-| Commands            | `CommandHandler`、`CommandContext`、`CommandServices`、`defaultCommandHandlers`                            | 既定の commands に決定的な commands を追加する host                          |
-| Execution           | `SandboxConfig`                                                                                            | 実行環境を選ぶ host                                                          |
-| Models              | `MikanModels`、`CreateMikanModelsOptions`                                                                  | 独自のモデル一覧を渡す host                                                  |
-
-パッケージの `exports` map が宣言するパスだけが public です。それ以外の生成済み `dist/` パスや `src/` ソースパスの import はサポートされません。
+npm パッケージ `@geminixiang/mikan` は `mikan` コマンド（`dist/main.js`）をインストールし、module は export しません。`import "@geminixiang/mikan"` は `ERR_PACKAGE_PATH_NOT_EXPORTED` で失敗し、型宣言も同梱しません。運用者が依存できるのは CLI、`settings.json`、`mikan.env`、`~/.mikan` 以下の state レイアウトです。以下のインターフェースは CLI 内部のモジュールを接続するものです。
 
 ## 2. Platform intake と response のインターフェース
 
-ソース: `src/types.ts`（`src/index.ts` によって re-export）。
+ソース: `src/types.ts`。
 
 ### `ConversationEvent`
 
@@ -362,7 +348,7 @@ Admin endpoints は、conversation のインベントリ/状態/使用状況、�
 
 ## 契約テスト対応表
 
-これらのテストスイートが守るのは個々の helper ではなく、owner をまたぐ契約です。ある seam を変えるときは、その行のスイートをすべて一緒に実行してください。複数の行にまたがる変更では、それらの和集合を実行します。public、永続化、wire の変更では、さらに `npm test` 全体の実行が必要です。
+これらのテストスイートが守るのは個々の helper ではなく、owner をまたぐ契約です。ある seam を変えるときは、その行のスイートをすべて一緒に実行してください。複数の行にまたがる変更では、それらの和集合を実行します。永続化または wire の変更では、さらに `npm test` 全体の実行が必要です。
 
 | 契約の行                                    | 一緒に実行するテスト                                                                                                                                                                                                  | その行が守るもの                                                                                                                              |
 | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -375,7 +361,7 @@ Admin endpoints は、conversation のインベントリ/状態/使用状況、�
 | Trust、vault、portal のセキュリティ         | `src/test/vault-policy.test.ts`、`src/test/vault.test.ts`、`src/test/login.test.ts`、`src/test/oauth-link-server.test.ts`、`src/test/token-store.test.ts`                                                             | `trustModel` の policy、identity key の検索、明示的な credential のプロビジョニング、login/OAuth token の境界、無効時の portal の動作         |
 | Settings と live runner のキャッシュ        | `src/test/settings-apply.test.ts`、`src/test/settings.test.ts`、`src/test/model-command.test.ts`、`src/test/admin-portal.test.ts`                                                                                     | 書き込み seam の順序、葉単位の settings マージ、busy/stale の結果、command/admin とディスク・cached runner の一致                             |
 | Event-file のスケジュール wire format       | `src/test/event-format.test.ts`、`src/test/event-tool.test.ts`、`src/test/events.test.ts`                                                                                                                             | builder/parser の互換性、legacy の読み取り、queue が満杯のときの動作、routing、削除/保持の順序                                                |
-| 公開パッケージの境界                        | `src/test/public-api.test.ts`、`src/test/embedder-example.test.ts`、`src/test/boot.test.ts`                                                                                                                           | export map の利用者、embedding の構築、CLI の起動/flag の文法                                                                                 |
+| 公開パッケージの境界                        | `src/test/source-guards.boundaries.test.ts`、`src/test/boot.test.ts`                                                                                                                                                  | `package.json` に module のエントリポイントがないこと、CLI の起動/flag の文法                                                                 |
 
 絞り込んで実行するときは、対象ファイルをそのまま Vitest に渡します。例:
 
@@ -385,7 +371,7 @@ npm test -- src/test/session-key.test.ts src/test/session-runtime.test.ts src/te
 
 ## 変更の手順
 
-seam を変える前に、それを `Public`、`Host integration`、`Wire / persisted`、`Internal` のどれかに分類し、次を確認します:
+seam を変える前に、それを `Host integration`、`Wire / persisted`、`Internal` のどれかに分類し、次を確認します:
 
 1. producer と consumer が引き続き同じ正規の type、parser、builder、port を使っている。
 2. identity、trust、path、並行性、lifecycle、順序の意味がこのページに書かれ、対応する契約の行でカバーされている。

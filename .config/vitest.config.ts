@@ -3,11 +3,6 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   root: fileURLToPath(new URL("..", import.meta.url)),
-  resolve: {
-    alias: {
-      "@geminixiang/mikan": fileURLToPath(new URL("../src/index.ts", import.meta.url)),
-    },
-  },
   test: {
     include: ["src/test/**/*.test.ts"],
     sequence: { shuffle: true },

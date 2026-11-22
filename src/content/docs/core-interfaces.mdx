@@ -7,14 +7,13 @@ This page documents mikan's **architectural interfaces**: the contracts that cro
 
 ## Stability levels
 
-| Level            | Meaning                                                     | Compatibility expectation                                         |
-| ---------------- | ----------------------------------------------------------- | ----------------------------------------------------------------- |
-| Public           | Imported by npm consumers                                   | Preserve or version deliberately                                  |
-| Host integration | Used to embed the runtime or add a platform/runtime backend | Preserve while the integration exists                             |
-| Wire / persisted | Stored on disk or sent across a process/network boundary    | Migrate explicitly; readers should tolerate supported older forms |
-| Internal         | Connects modules inside the mikan CLI                       | May change with coordinated call sites and tests                  |
+| Level            | Meaning                                                  | Compatibility expectation                                         |
+| ---------------- | -------------------------------------------------------- | ----------------------------------------------------------------- |
+| Host integration | Used to add a platform or runtime backend                | Preserve while the integration exists                             |
+| Wire / persisted | Stored on disk or sent across a process/network boundary | Migrate explicitly; readers should tolerate supported older forms |
+| Internal         | Connects modules inside the mikan CLI                    | May change with coordinated call sites and tests                  |
 
-`src/index.ts` is an explicit export list rather than a wildcard re-export, and `src/test/public-api.test.ts` snapshots it so an accidental addition fails CI. It exports only what an embedder needs; harness, session, and sandbox internals are not part of the package interface.
+The npm package is the `mikan` CLI. It publishes no module entry point, so no TypeScript export is a compatibility promise; `src/test/source-guards.boundaries.test.ts` fails when `package.json` gains one.
 
 ## Boundary map
 
@@ -76,24 +75,11 @@ These bridges deliberately distinguish context isolation from sandboxing. A new 
 
 ## 1. Package interface
 
-The npm entry point is `@geminixiang/mikan`, implemented by `src/index.ts`.
-
-### Supported entry-point groups
-
-| Group                | Main symbols                                                                                               | Consumer                                                               |
-| -------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| Runtime embedding    | `createConversationRuntime`, `ConversationRuntime`, `ConversationRuntimeOptions`                           | A host that supplies platform and execution dependencies               |
-| Office and workspace | `createWorkspace`, `createOfficeAddress`, `officeKey`, `Workspace`, `Office`, `OfficeAddress`, `OfficeKey` | Any embedder: `createConversationRuntime` requires a `Workspace` value |
-| Platform contract    | `MessagingBot`, `ConversationEvent`, `ConversationContext`, `ConversationResponder`, `MessagingInfo`       | Platform adapters and embedders                                        |
-| Commands             | `CommandHandler`, `CommandContext`, `CommandServices`, `defaultCommandHandlers`                            | Hosts adding deterministic commands to the defaults                    |
-| Execution            | `SandboxConfig`                                                                                            | Hosts choosing the execution backend                                   |
-| Models               | `MikanModels`, `CreateMikanModelsOptions`                                                                  | Hosts supplying their own model list                                   |
-
-Only paths declared by the package `exports` map are public. Importing any other generated `dist/` path or a source path under `src/` is unsupported.
+The npm package `@geminixiang/mikan` installs the `mikan` command (`dist/main.js`) and exports no module: `import "@geminixiang/mikan"` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`, and the package ships no type declarations. What an operator can depend on is the CLI, `settings.json`, `mikan.env`, and the state layout under `~/.mikan`. The interfaces below connect modules inside the CLI.
 
 ## 2. Platform intake and response interface
 
-Source: `src/types.ts` (re-exported by `src/index.ts`).
+Source: `src/types.ts`.
 
 ### `ConversationEvent`
 
@@ -362,7 +348,7 @@ Admin endpoints cover conversation inventory/state/usage, global and conversatio
 
 ## Contract-test matrix
 
-These suites protect the cross-owner contracts rather than individual helpers. When a seam changes, run every suite in its row together; if a change crosses rows, run the union. A public, persisted, or wire change also requires the full `npm test` run.
+These suites protect the cross-owner contracts rather than individual helpers. When a seam changes, run every suite in its row together; if a change crosses rows, run the union. A persisted or wire change also requires the full `npm test` run.
 
 | Contract row                                         | Tests to run together                                                                                                                                                                                                 | What the row protects                                                                                                                                         |
 | ---------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -375,7 +361,7 @@ These suites protect the cross-owner contracts rather than individual helpers. W
 | Trust, vault, and portal security                    | `src/test/vault-policy.test.ts`, `src/test/vault.test.ts`, `src/test/login.test.ts`, `src/test/oauth-link-server.test.ts`, `src/test/token-store.test.ts`                                                             | `trustModel` policy, identity-key lookup, explicit credential provisioning, login/OAuth token boundaries, and disabled portal behavior                        |
 | Settings and live-runner cache                       | `src/test/settings-apply.test.ts`, `src/test/settings.test.ts`, `src/test/model-command.test.ts`, `src/test/admin-portal.test.ts`                                                                                     | Writer-seam ordering, leaf-level settings merge, busy/stale outcomes, and command/admin agreement with disk and cached runners                                |
 | Event-file scheduling wire format                    | `src/test/event-format.test.ts`, `src/test/event-tool.test.ts`, `src/test/events.test.ts`                                                                                                                             | Builder/parser compatibility, legacy reads, queue-full behavior, routing, and deletion/retention ordering                                                     |
-| Public package boundary                              | `src/test/public-api.test.ts`, `src/test/embedder-example.test.ts`, `src/test/boot.test.ts`                                                                                                                           | Export-map consumers, embedding construction, and CLI boot/flag grammar                                                                                       |
+| Public package boundary                              | `src/test/source-guards.boundaries.test.ts`, `src/test/boot.test.ts`                                                                                                                                                  | No module entry point in `package.json`, CLI boot/flag grammar                                                                                                |
 
 For a focused run, pass the exact files to Vitest, for example:
 
@@ -385,7 +371,7 @@ npm test -- src/test/session-key.test.ts src/test/session-runtime.test.ts src/te
 
 ## Change protocol
 
-Before changing a seam, classify it as `Public`, `Host integration`, `Wire / persisted`, or `Internal`. Then verify:
+Before changing a seam, classify it as `Host integration`, `Wire / persisted`, or `Internal`. Then verify:
 
 1. The producer and consumer still use the same canonical type, parser, builder, or port.
 2. Identity, trust, path, concurrency, lifecycle, and ordering semantics are stated in this page and covered by the corresponding contract row.

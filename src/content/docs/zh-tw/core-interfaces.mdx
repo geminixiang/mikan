@@ -7,14 +7,13 @@ description: mikan 的 platform、runtime、harness、session、execution、vaul
 
 ## 穩定度層級
 
-| 層級             | 意義                                             | 相容性期望                                 |
-| ---------------- | ------------------------------------------------ | ------------------------------------------ |
-| Public           | 由 npm 消費者匯入                                | 保留，或有意識地做版本管理                 |
-| Host integration | 用來內嵌 runtime 或新增 platform/runtime backend | 只要該整合存在就保留                       |
-| Wire / persisted | 存於磁碟，或跨行程/網路邊界傳送                  | 明確 migrate；讀取端應容忍受支援的較舊格式 |
-| Internal         | 連接 mikan CLI 內部的各模組                      | 可在協調好呼叫端與測試的情況下變更         |
+| 層級             | 意義                                 | 相容性期望                                 |
+| ---------------- | ------------------------------------ | ------------------------------------------ |
+| Host integration | 用來新增 platform 或 runtime backend | 只要該整合存在就保留                       |
+| Wire / persisted | 存於磁碟，或跨行程/網路邊界傳送      | 明確 migrate；讀取端應容忍受支援的較舊格式 |
+| Internal         | 連接 mikan CLI 內部的各模組          | 可在協調好呼叫端與測試的情況下變更         |
 
-`src/index.ts` 是一份明確的匯出清單，而不是 wildcard re-export，而且 `src/test/public-api.test.ts` 會對它做 snapshot，因此不小心加入的匯出會讓 CI 失敗。它只匯出 embedder 需要的部分；harness、session 與 sandbox 的內部實作不屬於套件介面。
+npm 套件就是 `mikan` CLI。它不發布任何模組進入點，因此沒有哪個 TypeScript 匯出是相容性承諾；`package.json` 一旦多出進入點，`src/test/source-guards.boundaries.test.ts` 就會失敗。
 
 ## 邊界圖
 
@@ -76,24 +75,11 @@ runtime 是協調者。平台不得知道 harness 的持久化細節，harness �
 
 ## 1. 套件介面
 
-npm 進入點是 `@geminixiang/mikan`，由 `src/index.ts` 實作。
-
-### 受支援的進入點群組
-
-| 群組                 | 主要符號                                                                                                   | 消費者                                                             |
-| -------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Runtime embedding    | `createConversationRuntime`、`ConversationRuntime`、`ConversationRuntimeOptions`                           | 提供 platform 與 execution 相依的 host                             |
-| Office and workspace | `createWorkspace`、`createOfficeAddress`、`officeKey`、`Workspace`、`Office`、`OfficeAddress`、`OfficeKey` | 任何 embedder：`createConversationRuntime` 需要一個 `Workspace` 值 |
-| Platform contract    | `MessagingBot`、`ConversationEvent`、`ConversationContext`、`ConversationResponder`、`MessagingInfo`       | Platform adapter 與 embedder                                       |
-| Commands             | `CommandHandler`、`CommandContext`、`CommandServices`、`defaultCommandHandlers`                            | 在預設指令之外新增確定性指令的 host                                |
-| Execution            | `SandboxConfig`                                                                                            | 選擇執行環境的 host                                                |
-| Models               | `MikanModels`、`CreateMikanModelsOptions`                                                                  | 自行提供模型清單的 host                                            |
-
-只有套件 `exports` map 宣告的路徑是 public。匯入其他 `dist/` 產生路徑或 `src/` 原始碼路徑皆不受支援。
+npm 套件 `@geminixiang/mikan` 安裝 `mikan` 指令（`dist/main.js`），不匯出任何模組：`import "@geminixiang/mikan"` 會以 `ERR_PACKAGE_PATH_NOT_EXPORTED` 失敗，套件也不附型別宣告。維運者可以依賴的是 CLI、`settings.json`、`mikan.env` 與 `~/.mikan` 下的狀態配置。以下的介面連接的是 CLI 內部的模組。
 
 ## 2. 平台 intake 與 response 介面
 
-來源：`src/types.ts`（由 `src/index.ts` re-export）。
+來源：`src/types.ts`。
 
 ### `ConversationEvent`
 
@@ -362,7 +348,7 @@ Admin endpoint 涵蓋 conversation 清單/狀態/使用量、全域與對話設�
 
 ## 契約測試對照表
 
-這些測試組保護的是跨歸屬契約，而不是個別 helper。改動某個 seam 時，請一起執行它所在列的所有測試；如果改動跨越多列，就執行它們的聯集。Public、persisted 或 wire 變更還需要執行完整的 `npm test`。
+這些測試組保護的是跨歸屬契約，而不是個別 helper。改動某個 seam 時，請一起執行它所在列的所有測試；如果改動跨越多列，就執行它們的聯集。persisted 或 wire 變更還需要執行完整的 `npm test`。
 
 | 契約列                                        | 一起執行的測試                                                                                                                                                                                                        | 這一列保護什麼                                                                                                                     |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
@@ -375,7 +361,7 @@ Admin endpoint 涵蓋 conversation 清單/狀態/使用量、全域與對話設�
 | Trust、vault 與 portal 安全                   | `src/test/vault-policy.test.ts`、`src/test/vault.test.ts`、`src/test/login.test.ts`、`src/test/oauth-link-server.test.ts`、`src/test/token-store.test.ts`                                                             | `trustModel` policy、identity key 查詢、明確的憑證佈建、login/OAuth token 邊界，以及停用時的 portal 行為                           |
 | 設定與 live runner 快取                       | `src/test/settings-apply.test.ts`、`src/test/settings.test.ts`、`src/test/model-command.test.ts`、`src/test/admin-portal.test.ts`                                                                                     | 寫入 seam 的順序、葉層級的設定合併、busy/stale 結果，以及指令/admin 與磁碟、快取 runner 的一致                                     |
 | Event-file 排程 wire format                   | `src/test/event-format.test.ts`、`src/test/event-tool.test.ts`、`src/test/events.test.ts`                                                                                                                             | Builder/parser 相容性、legacy 讀取、queue 滿時的行為、routing，以及刪除/保留的順序                                                 |
-| 公開套件邊界                                  | `src/test/public-api.test.ts`、`src/test/embedder-example.test.ts`、`src/test/boot.test.ts`                                                                                                                           | Export map 的消費者、embedding 建構，以及 CLI 啟動/flag 文法                                                                       |
+| 公開套件邊界                                  | `src/test/source-guards.boundaries.test.ts`、`src/test/boot.test.ts`                                                                                                                                                  | `package.json` 沒有模組進入點，以及 CLI 啟動/flag 文法                                                                             |
 
 要做聚焦執行時，把確切的檔案傳給 Vitest，例如：
 
@@ -385,7 +371,7 @@ npm test -- src/test/session-key.test.ts src/test/session-runtime.test.ts src/te
 
 ## 變更流程
 
-改動 seam 之前，先把它歸類為 `Public`、`Host integration`、`Wire / persisted` 或 `Internal`，接著確認：
+改動 seam 之前，先把它歸類為 `Host integration`、`Wire / persisted` 或 `Internal`，接著確認：
 
 1. 生產者與消費者仍使用同一個正規的 type、parser、builder 或 port。
 2. Identity、trust、路徑、並行、lifecycle 與順序語意都寫在本頁，並由對應的契約列涵蓋。

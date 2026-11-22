@@ -4,8 +4,8 @@ All notable changes to this project will be documented in this file.
 
 The format is loosely based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
-from 1.0.0 on. The package interface is the root export of `@geminixiang/mikan`; the
-CLI, `settings.json`, `mikan.env`, and the state layout under `~/.mikan` are covered too.
+from 1.0.0 on. It covers the CLI, `settings.json`, `mikan.env`, and the state layout under
+`~/.mikan`. The package exports no module from 1.6.0 on.
 The GitHub adapter is experimental and excluded: its settings and conversation layout may
 change in a minor release.
 
@@ -26,7 +26,11 @@ change in a minor release.
   file, and names it in a warning at each start until you delete it. An app synced from a
   configuration token loses the slash command on the next start; on an app configured by hand,
   remove `/pi-sandbox`, which now does nothing.
-- For embedders: `SandboxResourceController.boost`, `getDefaultLimits`, and `getBoostLimits`,
+- The package interface. `import "@geminixiang/mikan"` now fails with
+  `ERR_PACKAGE_PATH_NOT_EXPORTED`, the package ships no type declarations, and the example in
+  `deploy/examples/embedder` is gone. The package is the `mikan` CLI; a program that embedded the
+  runtime stays on 1.6.0-beta.0 or runs the daemon instead. Nothing changes for an installed daemon.
+- For embedders, before the interface itself went: `SandboxResourceController.boost`, `getDefaultLimits`, and `getBoostLimits`,
   `SandboxLimitStatus.boosted`, `DockerContainerManagerOptions.boostLimits`,
   `SandboxSettings.boost`, `ConversationRuntimeOptions.resourceController`, and
   `SlackWebApi.assistant`.

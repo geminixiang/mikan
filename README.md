@@ -101,7 +101,6 @@ For routing, mounts, vault behavior, and managed container details, see [src/con
 - [Deployment](src/content/docs/deployment.mdx)
 - [Development](src/content/docs/development.md)
 - [Sandbox](src/content/docs/sandbox.mdx)
-- [Embedding mikan](deploy/examples/embedder/README.md) — build your own agent on the published package interface
 
 ## Development
 

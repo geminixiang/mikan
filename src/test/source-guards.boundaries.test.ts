@@ -25,7 +25,6 @@ interface BoundaryRule {
 
 const minimumSourceFiles = 250;
 const minimumProductionFiles = 120;
-const packageName = "@geminixiang/mikan";
 const moduleLoaderCalls = new Set([
   "vi.mock",
   "vi.doMock",
@@ -34,8 +33,7 @@ const moduleLoaderCalls = new Set([
   "vi.importActual",
   "vi.importMock",
 ]);
-const entryPointImportAllowlist = new Set(["src/index.ts", "src/test/public-api.test.ts"]);
-const adapterImportAllowlist = ["src/main.ts", "src/index.ts", "src/cli/", "src/runtime/"];
+const adapterImportAllowlist = ["src/main.ts", "src/cli/", "src/runtime/"];
 const linkFollowingFileCalls = new Set([
   "readFile",
   "readFileSync",
@@ -63,27 +61,9 @@ const productionParsedJsonAssertionBudget: Record<string, number> = {
   "src/adapters/github/client.ts": 1,
 };
 
-function publishedEntryPoints(): Map<string, string> {
-  const manifest = JSON.parse(readRepositoryFile("package.json")) as {
-    exports: Record<string, string | { import?: string }>;
-  };
-  const entries = new Map<string, string>();
-  for (const [subpath, target] of Object.entries(manifest.exports)) {
-    const importPath = typeof target === "string" ? target : target.import;
-    if (!importPath?.startsWith("./dist/") || !importPath.endsWith(".js")) continue;
-    const file = `src/${importPath.slice("./dist/".length, -".js".length)}.ts`;
-    entries.set(posix.join(packageName, subpath), file);
-  }
-  return entries;
-}
-
-const entryPointsBySpecifier = publishedEntryPoints();
-const entryPointFiles = new Set(entryPointsBySpecifier.values());
 const knownFiles = new Set(sources.map((source) => source.file));
 
 function resolveSpecifier(fromFile: string, specifier: string): string | undefined {
-  const published = entryPointsBySpecifier.get(specifier);
-  if (published) return published;
   if (!specifier.startsWith(".")) return undefined;
   const base = posix.join(posix.dirname(fromFile), specifier);
   const candidates = [
@@ -181,9 +161,9 @@ function parsedJsonAssertionPositions(source: ts.SourceFile): number[] {
 
 const rules: BoundaryRule[] = [
   {
-    id: "re-export-only-in-entry-points",
-    rule: `Only the published entry points (${[...entryPointFiles].join(", ")}, from package.json "exports") may contain export … from; import the value where it is used and export it from its owner instead`,
-    appliesTo: (file) => !entryPointFiles.has(file),
+    id: "no-re-exports",
+    rule: "No module may contain export … from, because the package publishes no module entry point; import the value where it is used and export it from its owner instead",
+    appliesTo: () => true,
     violates: (_file, source) => reExportPositions(source),
     spellings: [
       { file: "src/office/index.ts", code: 'export { a } from "./a.js";', violates: true },
@@ -206,70 +186,6 @@ const rules: BoundaryRule[] = [
         code: 'export type { A };\nimport type { A } from "./types.js";',
         violates: false,
       },
-    ],
-  },
-  {
-    id: "no-import-through-entry-points",
-    rule: `Code under src/ must not import through the published entry points (${[...entryPointFiles].join(", ")}); import from the owning module. Allowed: ${[...entryPointImportAllowlist].join(", ")}`,
-    appliesTo: (file) => !entryPointImportAllowlist.has(file),
-    violates: (file, source) =>
-      referencesResolvingTo(file, source, (resolved) => entryPointFiles.has(resolved)),
-    spellings: [
-      {
-        file: "src/runtime/x.ts",
-        code: 'import { a } from "../index.js";',
-        violates: true,
-      },
-      {
-        file: "src/harness/tools/x.ts",
-        code: 'import type { A } from "../../index.js";',
-        violates: true,
-      },
-      { file: "src/x.ts", code: 'import { a } from "./index.js";', violates: true },
-      { file: "src/runtime/x.ts", code: "import { a } from '..';", violates: true },
-      { file: "src/test/x.test.ts", code: 'import { a } from "../index.js";', violates: true },
-      {
-        file: "src/test/x.test.ts",
-        code: 'import { a } from "@geminixiang/mikan";',
-        violates: true,
-      },
-      {
-        file: "src/test/x.test.ts",
-        code: 'const m = await import("@geminixiang/mikan");',
-        violates: true,
-      },
-      {
-        file: "src/test/x.test.ts",
-        code: 'vi.mock("../index.js", () => ({}));',
-        violates: true,
-      },
-      {
-        file: "src/test/x.test.ts",
-        code: 'type T = import("../index.js").T;',
-        violates: true,
-      },
-      {
-        file: "src/runtime/x.ts",
-        code: 'export { a } from "../index.js";',
-        violates: true,
-      },
-      {
-        file: "src/runtime/x.ts",
-        code: 'import { a } from "../harness/runner.js";',
-        violates: false,
-      },
-      {
-        file: "src/runtime/x.ts",
-        code: 'import { a } from "../office/index.js";',
-        violates: false,
-      },
-      {
-        file: "src/runtime/x.ts",
-        code: 'import { a } from "../sandbox/layout.js";',
-        violates: false,
-      },
-      { file: "src/test/x.test.ts", code: 'vi.mock("../harness/runner.js");', violates: false },
-      { file: "src/test/x.test.ts", code: 'const text = "../harness/index.js";', violates: false },
     ],
   },
   {
@@ -456,16 +372,18 @@ function spellingViolates(rule: BoundaryRule, file: string, code: string): boole
 }
 
 describe("boundary guard patterns", () => {
-  test("package.json exports resolve to the published entry points", () => {
-    expect([...entryPointFiles]).toEqual(expect.arrayContaining(["src/index.ts"]));
-    expect([...entryPointFiles].filter((file) => !knownFiles.has(file))).toEqual([]);
+  test("package.json publishes the CLI and no module entry point", () => {
+    const manifest: unknown = JSON.parse(readRepositoryFile("package.json"));
+    expect(manifest).toHaveProperty("bin", { mikan: "dist/main.js" });
+    expect(manifest).toHaveProperty("exports", { "./package.json": "./package.json" });
+    expect(manifest).not.toHaveProperty("main");
+    expect(manifest).not.toHaveProperty("types");
   });
 
   test("every allowlisted file still exists", () => {
-    const missing = [
-      ...entryPointImportAllowlist,
-      ...adapterImportAllowlist.filter((allowed) => !allowed.endsWith("/")),
-    ].filter((file) => !knownFiles.has(file));
+    const missing = adapterImportAllowlist
+      .filter((allowed) => !allowed.endsWith("/"))
+      .filter((file) => !knownFiles.has(file));
     expect(missing).toEqual([]);
   });
 
