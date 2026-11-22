@@ -48,6 +48,36 @@ Across all runs of C: no reply had more than two lines, no `↳` line appeared a
 - **The convention is used more than the tool on every model that does not already use the tool always**, at half the model requests.
 - **The convention's mistake is a specific one.** All but one of its unwanted suggestions came after the agent asked the person for something it needed (who to write to, which folder): the reply asked, and the `↳` lines offered made-up answers such as `↳ 收件人是 xxx@example.com，改到明天下午三點`. Tapping that would send a placeholder. A reworded section ("when your reply asks for something you need, it has no `↳` lines; never put a guessed answer in one") did not help: 4 of 20 on both Claude models, against 2 of 20.
 
+## Wording experiments (2026-11-22, after the owner's go-ahead)
+
+The owner approved C on condition that wording and structure are tried until the acceptance criteria hold on all three models: wanted suggestions no lower than the table above, unwanted on at most 1 of 20, never more than two lines. If they do not hold, stop and report, without a rule in the core that judges for the model. Eight sections were tried. Each cell is the number of runs with a suggestion over the number of runs.
+
+On the twenty messages used for tuning:
+
+| Section                                                                 | Runs per cell | luna wanted | luna unwanted | sonnet wanted | sonnet unwanted | haiku wanted | haiku unwanted |
+| ----------------------------------------------------------------------- | ------------- | ----------- | ------------- | ------------- | --------------- | ------------ | -------------- |
+| pi-mobile's wording                                                     | 20            | 13          | 0             | 20            | 2               | 20           | 2              |
+| + "never put a guessed answer in one"                                   | 20            | 11          | 0             | 20            | 4               | 19           | 4              |
+| + "sent exactly as written … never answers a question you asked"        | 20            | 11          | 0             | 15            | 1               | 20           | 3              |
+| "Only a reply that finishes what was asked …"                           | 20            | 9           | 1             | 16            | 0               | 20           | 8              |
+| the same, with `slack_blockkit` named for fixed choices                 | 20            | 19          | 0             | 17            | 2               | 20           | 4              |
+| rule, one positive example, two negative examples                       | 30            | 15          | 0             | 25            | 0               | 26           | 0              |
+| the same + "when in doubt, leave them out"                              | 30            | 10          | 0             | 28            | 0               | 22           | 0              |
+| rule naming more kinds of reply, two positive and two negative examples | 60            | 49          | 0             | 55            | 0               | 59           | 4              |
+
+The last section on twenty messages it was not tuned on, thirty runs per cell: luna 15 wanted and 0 unwanted, sonnet 23 and 0, haiku 30 and 7.
+
+No run of any section produced more than two lines.
+
+### Findings
+
+- **Examples do what rules do not.** Stating the rule more strictly made the guessed-answer mistake more frequent or cut wanted suggestions. Showing one reply that asks and gets no lines removed the mistake on two of the three models, in 180 runs each.
+- **No section meets all the criteria on all three models.** With the best one: the largest model never gives an unwanted suggestion and gives a wanted one on about four replies in five, not on every one; the smallest model gives almost every wanted one and still adds lines after about one unwanted reply in eight, mostly after asking the person for something; the third gives no unwanted ones and a wanted one on half to four in five.
+- **The same section varies by several runs in thirty from one sample to the next**, so a table of twenty runs per cell, like the first one on this page, cannot carry a criterion of "20 of 20".
+- **A section tuned on twenty messages does worse on twenty others** for two of the three models. The criteria should be judged on messages the wording was not tuned on.
+
+The implementation is on hold for the owner's decision on which criterion gives.
+
 ## Recommendation
 
 Adopt C, in this shape:
