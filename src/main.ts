@@ -358,6 +358,7 @@ function buildPlatformToolPackFactories(): PlatformToolPackFactory[] {
       },
       ownsBlockKitMessage: (conversationId, ts, threadTs) =>
         requireSlackBot(SLACK_BLOCKKIT_TOOL).ownsBlockKitMessage(conversationId, ts, threadTs),
+      resolveMentions: (text) => requireSlackBot(SLACK_BLOCKKIT_TOOL).resolveMentions(text),
     };
     factories.push(() => createSlackToolPack(platformSlackOps));
   }

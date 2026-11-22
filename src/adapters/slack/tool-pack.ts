@@ -21,10 +21,8 @@ export function createSlackToolPack(ops: PlatformSlackOps): PlatformToolPack {
         boundTarget = target;
       }
       setSlackBlockKitOps({
+        resolveMentions: (text) => ops.resolveMentions(text),
         postBlocks: async (args) => {
-          if (args.threadTs !== undefined && args.threadTs !== threadTs) {
-            throw new Error("slack_blockkit cannot post outside the active conversation thread");
-          }
           const result = await ops.postBlocks(conversationId, { ...args, threadTs });
           ownedMessageTs.add(result.ts);
           return result;

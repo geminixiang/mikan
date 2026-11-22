@@ -36,6 +36,11 @@ change in a minor release.
 - `mikan` with no `--sandbox` flag now runs `--sandbox=oci`, mikan's published sandbox image, and
   needs nerdctl, Podman, or Docker. It used to run the agent directly on the machine.
 - `mikan migrate` no longer needs `--sandbox`; the flag is accepted and ignored.
+- `slack_blockkit` takes the message as Markdown and its buttons or select menu as lists, and no
+  longer takes Block Kit JSON. It refuses a message with nothing to click: a normal reply renders
+  the same Markdown, tables included. Buttons on messages posted earlier keep working. Custom
+  layouts built from raw blocks are no longer possible. The conversion of ordinary replies to
+  Block Kit is unchanged.
 - The system prompt tells the model that only files under the workspace persist and that installed
   packages are discarded when the sandbox image is updated. It used to say that changes in the
   container persist across sessions, which stopped being true when mikan began replacing containers

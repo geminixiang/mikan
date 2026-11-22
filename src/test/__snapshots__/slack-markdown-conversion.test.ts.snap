@@ -1,0 +1,599 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`an ordinary reply with code converts to the same Slack blocks as before 1`] = `
+{
+  "blocks": [
+    {
+      "text": "Run this:
+
+\`\`\`bash
+npm test -- src/test/x.test.ts
+\`\`\`
+
+and \`inline\` too.",
+      "type": "markdown",
+    },
+  ],
+  "text": "Run this:
+npm test -- src/test/x.test.ts
+and inline too.",
+}
+`;
+
+exports[`an ordinary reply with currency converts to the same Slack blocks as before 1`] = `
+{
+  "blocks": [
+    {
+      "text": "Cost is **$1,200** and **$30** per seat.",
+      "type": "markdown",
+    },
+  ],
+  "text": "Cost is $1,200 and $30 per seat.",
+}
+`;
+
+exports[`an ordinary reply with headings converts to the same Slack blocks as before 1`] = `
+{
+  "blocks": [
+    {
+      "text": "# Summary
+
+## Details
+
+Text under a heading.
+
+### Next
+
+More.",
+      "type": "markdown",
+    },
+  ],
+  "text": "Summary
+Details
+Text under a heading.
+Next
+More.",
+}
+`;
+
+exports[`an ordinary reply with indexedTable converts to the same Slack blocks as before 1`] = `
+{
+  "blocks": [
+    {
+      "column_settings": [
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+      ],
+      "rows": [
+        [
+          {
+            "text": "#",
+            "type": "raw_text",
+          },
+          {
+            "text": "Name",
+            "type": "raw_text",
+          },
+        ],
+        [
+          {
+            "text": "1",
+            "type": "raw_text",
+          },
+          {
+            "text": "alpha",
+            "type": "raw_text",
+          },
+        ],
+        [
+          {
+            "text": "2",
+            "type": "raw_text",
+          },
+          {
+            "text": "beta",
+            "type": "raw_text",
+          },
+        ],
+      ],
+      "type": "table",
+    },
+  ],
+  "text": "# | Name
+1 | alpha
+2 | beta",
+}
+`;
+
+exports[`an ordinary reply with links converts to the same Slack blocks as before 1`] = `
+{
+  "blocks": [
+    {
+      "text": "See [the docs](https://example.com/docs) and [legacy label](https://example.com/legacy).",
+      "type": "markdown",
+    },
+  ],
+  "text": "See the docs and legacy label.",
+}
+`;
+
+exports[`an ordinary reply with lists converts to the same Slack blocks as before 1`] = `
+{
+  "blocks": [
+    {
+      "text": "- one
+- two
+  - nested
+- three
+
+1. first
+2. second",
+      "type": "markdown",
+    },
+  ],
+  "text": "one
+two
+nested
+three
+first
+second",
+}
+`;
+
+exports[`an ordinary reply with mention converts to the same Slack blocks as before 1`] = `
+{
+  "blocks": [
+    {
+      "text": "Thanks <@U0000000001>, cc <@U0123456789>.",
+      "type": "markdown",
+    },
+  ],
+  "text": "Thanks <@U0000000001>, cc <@U0123456789>.",
+}
+`;
+
+exports[`an ordinary reply with mixed converts to the same Slack blocks as before 1`] = `
+{
+  "blocks": [
+    {
+      "text": "## Report
+
+- item **one**
+- item two",
+      "type": "markdown",
+    },
+    {
+      "column_settings": [
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+      ],
+      "rows": [
+        [
+          {
+            "text": "#",
+            "type": "raw_text",
+          },
+          {
+            "text": "K",
+            "type": "raw_text",
+          },
+          {
+            "text": "V",
+            "type": "raw_text",
+          },
+        ],
+        [
+          {
+            "text": "1",
+            "type": "raw_text",
+          },
+          {
+            "text": "a",
+            "type": "raw_text",
+          },
+          {
+            "text": "1",
+            "type": "raw_text",
+          },
+        ],
+      ],
+      "type": "table",
+    },
+    {
+      "text": "\`\`\`json
+{"ok": true}
+\`\`\`
+
+[link](https://example.com)",
+      "type": "markdown",
+    },
+  ],
+  "text": "Report
+item one
+item two
+
+K | V
+a | 1
+
+{"ok": true}
+link",
+}
+`;
+
+exports[`an ordinary reply with prose converts to the same Slack blocks as before 1`] = `
+{
+  "blocks": [
+    {
+      "text": "Deployed **v2** to _staging_. ~~Old plan~~ dropped. See \`config.yaml\`.",
+      "type": "markdown",
+    },
+  ],
+  "text": "Deployed v2 to staging. Old plan dropped. See config.yaml.",
+}
+`;
+
+exports[`an ordinary reply with quote converts to the same Slack blocks as before 1`] = `
+{
+  "blocks": [
+    {
+      "text": "> quoted line
+> second line
+
+plain after",
+      "type": "markdown",
+    },
+  ],
+  "text": "quoted line
+second line
+plain after",
+}
+`;
+
+exports[`an ordinary reply with table converts to the same Slack blocks as before 1`] = `
+{
+  "blocks": [
+    {
+      "column_settings": [
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+      ],
+      "rows": [
+        [
+          {
+            "text": "#",
+            "type": "raw_text",
+          },
+          {
+            "text": "Name",
+            "type": "raw_text",
+          },
+          {
+            "text": "Count",
+            "type": "raw_text",
+          },
+        ],
+        [
+          {
+            "text": "1",
+            "type": "raw_text",
+          },
+          {
+            "text": "alpha",
+            "type": "raw_text",
+          },
+          {
+            "text": "1",
+            "type": "raw_text",
+          },
+        ],
+        [
+          {
+            "text": "2",
+            "type": "raw_text",
+          },
+          {
+            "text": "beta",
+            "type": "raw_text",
+          },
+          {
+            "text": "22",
+            "type": "raw_text",
+          },
+        ],
+      ],
+      "type": "table",
+    },
+  ],
+  "text": "Name | Count
+alpha | 1
+beta | 22",
+}
+`;
+
+exports[`an ordinary reply with twoTables converts to the same Slack blocks as before 1`] = `
+{
+  "blocks": [
+    {
+      "text": "Before",
+      "type": "markdown",
+    },
+    {
+      "column_settings": [
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+      ],
+      "rows": [
+        [
+          {
+            "text": "#",
+            "type": "raw_text",
+          },
+          {
+            "text": "A",
+            "type": "raw_text",
+          },
+          {
+            "text": "B",
+            "type": "raw_text",
+          },
+        ],
+        [
+          {
+            "text": "1",
+            "type": "raw_text",
+          },
+          {
+            "text": "1",
+            "type": "raw_text",
+          },
+          {
+            "text": "2",
+            "type": "raw_text",
+          },
+        ],
+      ],
+      "type": "table",
+    },
+    {
+      "text": "Between",
+      "type": "markdown",
+    },
+    {
+      "column_settings": [
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+      ],
+      "rows": [
+        [
+          {
+            "text": "#",
+            "type": "raw_text",
+          },
+          {
+            "text": "C",
+            "type": "raw_text",
+          },
+        ],
+        [
+          {
+            "text": "1",
+            "type": "raw_text",
+          },
+          {
+            "text": "3",
+            "type": "raw_text",
+          },
+        ],
+      ],
+      "type": "table",
+    },
+    {
+      "text": "After",
+      "type": "markdown",
+    },
+  ],
+  "text": "Before
+
+A | B
+1 | 2
+
+Between
+
+C
+3
+
+After",
+}
+`;
+
+exports[`an ordinary reply with wideTable converts to the same Slack blocks as before 1`] = `
+{
+  "blocks": [
+    {
+      "column_settings": [
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+        {
+          "is_wrapped": true,
+        },
+      ],
+      "rows": [
+        [
+          {
+            "text": "#",
+            "type": "raw_text",
+          },
+          {
+            "text": "c0",
+            "type": "raw_text",
+          },
+          {
+            "text": "c1",
+            "type": "raw_text",
+          },
+          {
+            "text": "c2",
+            "type": "raw_text",
+          },
+          {
+            "text": "c3",
+            "type": "raw_text",
+          },
+          {
+            "text": "c4",
+            "type": "raw_text",
+          },
+          {
+            "text": "c5",
+            "type": "raw_text",
+          },
+          {
+            "text": "c6",
+            "type": "raw_text",
+          },
+          {
+            "text": "c7",
+            "type": "raw_text",
+          },
+          {
+            "text": "c8",
+            "type": "raw_text",
+          },
+          {
+            "text": "c9",
+            "type": "raw_text",
+          },
+          {
+            "text": "c10",
+            "type": "raw_text",
+          },
+          {
+            "text": "c11",
+            "type": "raw_text",
+          },
+        ],
+        [
+          {
+            "text": "1",
+            "type": "raw_text",
+          },
+          {
+            "text": "v0",
+            "type": "raw_text",
+          },
+          {
+            "text": "v1",
+            "type": "raw_text",
+          },
+          {
+            "text": "v2",
+            "type": "raw_text",
+          },
+          {
+            "text": "v3",
+            "type": "raw_text",
+          },
+          {
+            "text": "v4",
+            "type": "raw_text",
+          },
+          {
+            "text": "v5",
+            "type": "raw_text",
+          },
+          {
+            "text": "v6",
+            "type": "raw_text",
+          },
+          {
+            "text": "v7",
+            "type": "raw_text",
+          },
+          {
+            "text": "v8",
+            "type": "raw_text",
+          },
+          {
+            "text": "v9",
+            "type": "raw_text",
+          },
+          {
+            "text": "v10",
+            "type": "raw_text",
+          },
+          {
+            "text": "v11",
+            "type": "raw_text",
+          },
+        ],
+      ],
+      "type": "table",
+    },
+  ],
+  "text": "c0 | c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 | c9 | c10 | c11
+v0 | v1 | v2 | v3 | v4 | v5 | v6 | v7 | v8 | v9 | v10 | v11",
+}
+`;

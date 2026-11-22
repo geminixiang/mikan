@@ -135,11 +135,13 @@ export interface PlatformSlackOps {
     args: { ts: string; text: string; blocks: object[]; threadTs?: string },
   ): Promise<void>;
   ownsBlockKitMessage(conversationId: string, ts: string, threadTs?: string): boolean;
+  resolveMentions(text: string): string;
 }
 
 export interface SlackBlockKitOps {
-  postBlocks(args: { text: string; blocks: object[]; threadTs?: string }): Promise<{ ts: string }>;
+  postBlocks(args: { text: string; blocks: object[] }): Promise<{ ts: string }>;
   updateBlocks(args: { ts: string; text: string; blocks: object[] }): Promise<void>;
+  resolveMentions(text: string): string;
 }
 
 export type SlackAppManifest = AppsManifestUpdateArguments["manifest"];

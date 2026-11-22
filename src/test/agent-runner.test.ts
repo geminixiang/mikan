@@ -508,6 +508,7 @@ describe("PiAgentWrapper.run", () => {
             postBlocks,
             updateBlocks: vi.fn(async () => {}),
             ownsBlockKitMessage: () => false,
+            resolveMentions: (text) => text,
           }),
       ],
     });
@@ -515,8 +516,8 @@ describe("PiAgentWrapper.run", () => {
       fauxAssistantMessage(
         fauxToolCall("slack_blockkit", {
           label: "Ask the user to choose",
-          blocks: [{ type: "section", text: { type: "mrkdwn", text: "Choose" } }],
           text: "Choose",
+          buttons: [{ text: "First", value: "first" }],
         }),
         { stopReason: "toolUse" },
       ),

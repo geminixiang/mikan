@@ -384,7 +384,7 @@ export class SlackMessagingBot implements MessagingBot {
     return source.replace(this.ownMentionRegex, "").trim();
   }
 
-  private resolveMentions(text: string): string {
+  resolveMentions(text: string): string {
     return resolveSlackMentions(text, this.users.values());
   }
 
