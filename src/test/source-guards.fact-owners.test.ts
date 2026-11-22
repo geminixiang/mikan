@@ -437,7 +437,7 @@ const guards: FactOwnerGuard[] = [
       "const text = errorMessage(error);",
       'import { errorMessage } from "../unknown-values.js";',
       "const wrapped = err instanceof Error ? err : new Error(String(err));",
-      'const text = error instanceof Error ? error.message : "Could not deliver task update.";',
+      'const text = error instanceof Error ? error.message : "Could not deliver the update.";',
       'const kind = error instanceof Error ? error.name : "Error";',
       "const text = a instanceof Error ? b.message : String(a);",
       "const detail = error instanceof Error ? error.message : error;",
@@ -500,22 +500,6 @@ const guards: FactOwnerGuard[] = [
     ],
   },
   {
-    id: "control-input-custom-type",
-    owner: "CONTROL_INPUT_CUSTOM_TYPE in src/sessions/types.ts",
-    ownerFiles: ["src/sessions/types.ts"],
-    find: literalsMatching(/^mikan\.control_input$/, literalFragments),
-    copies: [
-      'const same = entry.customType === "mikan.control_input";',
-      "await store.appendCustomEntry('mikan.control_input', {});",
-      "const type = `mikan.control_input`;",
-    ],
-    legitimate: [
-      "await store.appendCustomEntry(CONTROL_INPUT_CUSTOM_TYPE, {});",
-      'const text = "records a mikan.control_input entry first";',
-      'const type = "mikan.control";',
-    ],
-  },
-  {
     id: "google-vault-credential-files",
     owner: "GOOGLE_VAULT_CREDENTIAL_FILES in src/vault/index.ts",
     ownerFiles: ["src/vault/index.ts"],
@@ -555,8 +539,8 @@ const guards: FactOwnerGuard[] = [
     find: findToolNameLiterals,
     copies: [
       'const bot = requireSlackBot("slack_blockkit");',
-      'const keep = tool.name !== "start_task";',
-      'const same = "task_status" === toolName;',
+      'const keep = tool.name !== "react";',
+      'const same = "github_read" === toolName;',
       "const tool = { name: 'web_fetch' };",
       'const profile = { tools: ["read", "bash", "jev"] };',
       "const same = toolName === `generate_image`;",
@@ -568,9 +552,9 @@ const guards: FactOwnerGuard[] = [
       'type SlackAutoReplyMode = "off" | "on" | "jev";',
       'const icon = autoReplyMode === "jev" ? a : b;',
       'switch (value) {\n  case "jev":\n    break;\n}',
-      'report(error, { surface: "task_status" });',
+      'report(error, { surface: "web_fetch" });',
       'record({ caller: "web_fetch" });',
-      'const text = "Call start_task alone, without other tools in the same batch.";',
+      'const text = "Call web_fetch alone, without other tools in the same batch.";',
       "const tool = { name: JEV_TOOL };",
       'import { JEV_TOOL } from "./tools/jev.js";',
       'const provider = { aliases: ["github", "github_oauth"], id: "github_pat" };',
@@ -645,11 +629,9 @@ describe("fact-owner guard patterns", () => {
   });
 
   test("tool name owners are discovered from their exporting modules", () => {
-    expect(toolNameOwners.size).toBeGreaterThanOrEqual(12);
+    expect(toolNameOwners.size).toBeGreaterThanOrEqual(10);
     expect([...toolNameOwners.keys()]).toEqual(
       expect.arrayContaining([
-        "start_task",
-        "task_status",
         "slack_blockkit",
         "jev",
         "web_fetch",

@@ -77,18 +77,9 @@ export interface SessionRunRecord {
   status?: SessionRunStatus;
 }
 
-export interface TaskBrief {
-  acknowledgement: string;
-}
-
 export interface ResponseUsage {
   timestamp: number;
   usage: Usage;
-}
-
-export interface SessionSpend {
-  usage: Usage;
-  updatedAt: number;
 }
 
 export interface SessionExecution {
@@ -97,12 +88,11 @@ export interface SessionExecution {
   result?: { status: SessionRunStatus; endedAt: number };
 }
 
-export interface TaskSessionState extends SessionExecution {
-  sessionKey: string;
-  acknowledgement?: string;
+export interface SessionSpend {
+  usage: Usage;
+  updatedAt: number;
 }
 
-export const CONTROL_INPUT_CUSTOM_TYPE = "mikan.control_input";
 export const RUN_CAUSE_CUSTOM_TYPE = "mikan.run_cause";
 
 export interface SessionInspection {

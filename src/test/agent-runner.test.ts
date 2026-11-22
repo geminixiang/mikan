@@ -344,7 +344,6 @@ describe("PiAgentWrapper.run", () => {
     expect(responder.replaceResponse).toHaveBeenCalledTimes(1);
     expect(responder.replaceResponse.mock.calls[0]?.[0]).toContain("hello from the agent");
     expect(responder.deleteResponse).not.toHaveBeenCalled();
-    expect(runner.getCurrentStep()).toBeUndefined();
   });
 
   test("publishes a run's events, bracketed by start and end, to its office session", async () => {

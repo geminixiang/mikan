@@ -47,33 +47,12 @@ export interface ConversationMessage {
   threadTs?: string;
 }
 
-export interface TaskStatus {
-  sessionKey: string;
-  threadTs: string;
-  acknowledgement: string;
-  status:
-    | "running"
-    | "stopping"
-    | "completed"
-    | "aborted"
-    | "failed"
-    | "declined"
-    | "queued"
-    | "unknown";
-  currentTool?: string;
-  observedAt: string;
-  endedAt?: string;
-}
-
 export interface ReplaceResponseOptions {
   createOverflowLink?: () => string;
   final?: boolean;
 }
 
 export interface ConversationResponder {
-  startTask?(message: string, task: string): Promise<string>;
-  notifyCompletion?(): Promise<void>;
-  getTaskStatus?(sessionKey?: string): Promise<TaskStatus[]>;
   readonly showsPartialAnswer?: boolean;
   respond(text: string): Promise<void>;
   replaceResponse(text: string, options?: ReplaceResponseOptions): Promise<void>;
@@ -147,8 +126,6 @@ export interface RunningSession {
   sessionKey: string;
   startedAt: number;
   lastActivityAt?: number;
-  currentTool?: string;
-  stopping?: boolean;
 }
 
 export interface HandleCompactCommandOptions {
@@ -177,7 +154,6 @@ export interface MessagingEventHandler {
     bot: MessagingBot,
     replyThreadTs?: string,
   ): Promise<void>;
-  steer?(message: ConversationMessage): Promise<boolean>;
   forceStop(address: OfficeAddress, sessionKey: string): void;
   handleNewCommand(options: HandleNewCommandOptions): Promise<void>;
 }
@@ -187,16 +163,14 @@ export type CompactOutcome =
   | { compacted: true; tokensBefore: number; tokensAfter: number };
 
 export interface PiAgentWrapper {
-  steer?(message: ConversationMessage): Promise<boolean>;
   compact(instructions?: string): Promise<CompactOutcome>;
   syncChatHistory(currentMessageId?: string): Promise<void>;
   run(
     message: ConversationMessage,
     responder: ConversationResponder,
     platform: MessagingInfo,
-  ): Promise<{ stopReason: string; errorMessage?: string; finalText?: string }>;
+  ): Promise<{ stopReason: string; errorMessage?: string }>;
   abort(): void;
-  getCurrentStep(): { toolName?: string; label?: string } | undefined;
   dispose(): Promise<void>;
 }
 

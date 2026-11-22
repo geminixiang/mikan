@@ -52,7 +52,7 @@ export interface ReportUserFacingErrorOptions {
   context?: Record<string, unknown>;
 }
 
-export type JevCaller = "jev_tool" | "slack_auto_reply" | "task_intent";
+export type JevCaller = "jev_tool" | "slack_auto_reply";
 
 export interface JevOutcomeReport {
   caller: JevCaller;

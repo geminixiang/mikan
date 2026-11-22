@@ -1,7 +1,6 @@
 import type { ConversationLogMessage, RunAnswer } from "../../types.js";
 import { appendBotResponseLog, appendOfficeLog, readOfficeLog } from "../../office/log.js";
 import { SessionStore } from "../../sessions/session-store.js";
-import { taskRunId } from "../../harness/tools/task.js";
 import { continuedRunId } from "../../harness/continued-run.js";
 import { SocketModeClient } from "@slack/socket-mode";
 import type { KnownBlock } from "@slack/types";
@@ -72,9 +71,7 @@ import {
 import { reportUserFacingError } from "../../observability/index.js";
 import { recordSlackUpdate } from "./update-diagnostics.js";
 import { renderSlackBlocks, resolveSlackMentions } from "./blocks.js";
-import { querySlackTasks, formatTaskStatus, isTaskStatusQuestion } from "./task-status.js";
 import { buildAutoReplyState, JEV_ADDRESSED_INSTRUCTIONS } from "./auto-reply-context.js";
-import { buildTaskIntentState, classifyTaskIntent, type TaskIntent } from "./task-intent.js";
 import { StreamStartLimiter } from "./stream-limits.js";
 import { errorMessage } from "../../unknown-values.js";
 
@@ -282,67 +279,9 @@ export class SlackMessagingBot implements MessagingBot {
   }
 
   private createContext(event: SlackEvent): ConversationContext {
-    const context = createSlackAdapters(event, this, {
+    return createSlackAdapters(event, this, {
       replyMode: this.resolveReplyMode(event.address),
     });
-    context.responder.getTaskStatus = (key) =>
-      querySlackTasks(
-        this.office(event.channel),
-        event.channel,
-        this.handler
-          .getRunningSessions()
-          .filter(
-            (s) => s.address.platform === "slack" && s.address.conversationId === event.channel,
-          ),
-        key,
-      );
-    if (event.thread_ts) {
-      const threadTs = event.thread_ts;
-      let notified = false;
-      context.responder.notifyCompletion = async () => {
-        if (notified || !(await this.isTaskThread(event.channel, threadTs))) return;
-        const text = `<@${event.user}> 這一輪處理已結束，請查看上方結果。`;
-        const ts = await this.postInThread(event.channel, threadTs, text);
-        notified = true;
-        this.logBotResponse(event.channel, text, ts, threadTs);
-      };
-    }
-    if (!event.thread_ts) {
-      context.responder.startTask = async (message, task) => {
-        if (this.stopped) throw new Error("Slack is shutting down; task was not started.");
-        await context.responder.deleteResponse();
-        const root = await this.postMessage(event.channel, message);
-        this.logToFile(event.channel, {
-          date: new Date().toISOString(),
-          ts: root,
-          user: "bot",
-          text: message,
-          isMessagingBot: true,
-        });
-        const sessionKey = resolveSlackSessionKey(event.channel, root);
-        try {
-          const store = await SessionStore.openTask(
-            this.office(event.channel),
-            sessionKey,
-            event.sessionKey ?? event.channel,
-            { acknowledgement: message },
-          );
-          await store.close();
-          this.enqueueTaskRun({
-            ...event,
-            ts: taskRunId(root),
-            thread_ts: root,
-            sessionKey,
-            text: task,
-          });
-        } catch (error) {
-          await this.updateMessage(event.channel, root, `${message}\n\nTask could not start.`);
-          throw error;
-        }
-        return sessionKey;
-      };
-    }
-    return context;
   }
 
   constructor(handler: MessagingEventHandler, config: SlackMessagingBotOptions) {
@@ -806,41 +745,6 @@ export class SlackMessagingBot implements MessagingBot {
       : conversationId;
   }
 
-  private enqueueTaskRun(child: SlackEvent & { thread_ts: string; sessionKey: string }): void {
-    const { channel, thread_ts: root, sessionKey } = child;
-    const enqueued = this.queues.get(sessionKey).enqueue(async () => {
-      try {
-        await this.handler.handleEvent(
-          {
-            ...child,
-            attachments: child.attachments?.map((a) => ({
-              name: a.original,
-              localPath: a.localPath,
-            })),
-          },
-          this,
-          this.createContext(child),
-        );
-      } catch (error) {
-        reportUserFacingError(error, {
-          domain: "mikan",
-          surface: "task_handoff",
-          operation: "start_task_run",
-          severity: "error",
-          platform: "slack",
-          context: { conversationId: channel, sessionKey, threadTs: root },
-        });
-        await this.postInThread(
-          channel,
-          root,
-          "Task could not start. Please reply here to try again.",
-        );
-        throw error;
-      }
-    });
-    if (!enqueued) throw new Error("Task queue is closed.");
-  }
-
   private async continueInterruptedRuns(): Promise<void> {
     let continued = 0;
     for (const channelId of this.channels.keys()) {
@@ -893,21 +797,6 @@ export class SlackMessagingBot implements MessagingBot {
           this.createContext(event),
         ),
       );
-  }
-
-  private isTaskThread(channel: string, root: string): Promise<boolean> {
-    return SessionStore.isTask(this.office(channel), resolveSlackSessionKey(channel, root));
-  }
-
-  private async hasRunningTaskThread(channel: string): Promise<boolean> {
-    const office = this.office(channel);
-    for (const session of this.handler.getRunningSessions()) {
-      if (session.address.platform !== "slack" || session.address.conversationId !== channel) {
-        continue;
-      }
-      if (await SessionStore.isTask(office, session.sessionKey)) return true;
-    }
-    return false;
   }
 
   private hasKnownThreadSession(conversationId: string, sessionKey: string): Promise<boolean> {
@@ -1220,7 +1109,6 @@ export class SlackMessagingBot implements MessagingBot {
       event: slackEvent,
       ack,
       preStartupLogPrefix: "Logged old message (pre-startup), not triggering",
-      isTaskControl: async () => !!e.thread_ts && (await this.isTaskThread(e.channel, e.thread_ts)),
       isAddressed: async () => true,
     });
   }
@@ -1240,11 +1128,6 @@ export class SlackMessagingBot implements MessagingBot {
       return;
     }
 
-    const taskControl = await dispatch.isTaskControl();
-    if (taskControl) {
-      ack();
-      if (await this.deliverTaskUpdate(event, attachmentsPromise)) return;
-    }
     const addressed = await dispatch.isAddressed();
     const intake = this.processSlackMessageIntake({
       event,
@@ -1254,7 +1137,7 @@ export class SlackMessagingBot implements MessagingBot {
       magicWordAddressed: dispatch.magicWordAddressed,
     });
 
-    if (!taskControl) ack();
+    ack();
     await intake;
   }
 
@@ -1288,72 +1171,6 @@ export class SlackMessagingBot implements MessagingBot {
       !!event.user && USER_MESSAGE_SUBTYPES.has(event.subtype) && hasSlackContent;
     if (isSupportedUserMessage) return true;
     ack();
-    return false;
-  }
-
-  private async deliverTaskUpdate(
-    event: SlackEvent,
-    attachmentsPromise: Promise<Attachment[]>,
-  ): Promise<boolean> {
-    if (matchMagicWord(event.text) === "stop" || event.text.startsWith("/")) return false;
-    event.attachments = await attachmentsPromise;
-    const context = this.createContext(event);
-    const post = (text: string) =>
-      event.thread_ts
-        ? this.postInThread(event.channel, event.thread_ts, text)
-        : this.postMessage(event.channel, text);
-    try {
-      const tasks = await context.responder.getTaskStatus!(
-        event.thread_ts ? event.sessionKey : undefined,
-      );
-      if (!tasks.length) return false;
-      const active = tasks.filter((t) => t.status === "running" || t.status === "stopping");
-      const user = this.users.get(event.user);
-      const intent: TaskIntent = event.attachments?.length
-        ? event.thread_ts
-          ? "steer"
-          : "request"
-        : await classifyTaskIntent(
-            buildTaskIntentState(this.conversationDir(event.channel), event, {
-              speaker: user?.displayName ?? user?.userName,
-              tasks,
-              resolveName: (id) => this.users.get(id)?.displayName ?? this.users.get(id)?.userName,
-              botUserId: this.botUserId,
-            }),
-            event.text,
-            { conversationId: event.channel, inTaskThread: !!event.thread_ts },
-          );
-      if (intent === "status") {
-        const selection = event.thread_ts ? tasks : active.length ? active : tasks.slice(0, 1);
-        const text =
-          selection.length > 1
-            ? "目前有多個任務在處理，請到你想查詢的任務對話串詢問，避免弄錯。"
-            : formatTaskStatus(selection);
-        const ts = await post(text);
-        this.logBotResponse(event.channel, text, ts, event.thread_ts);
-        return true;
-      }
-      if (intent === "steer") {
-        const target = event.thread_ts
-          ? context.message
-          : active.length === 1
-            ? {
-                ...context.message,
-                sessionKey: active[0]!.sessionKey,
-                threadTs: active[0]!.threadTs,
-              }
-            : undefined;
-        if (target && (await this.handler.steer?.(target))) {
-          const text = "收到補充，會在下一個處理步驟納入；目前的操作不會立即中斷。";
-          const ts = await post(text);
-          this.logBotResponse(event.channel, text, ts, event.thread_ts);
-          return true;
-        }
-      }
-    } catch (error) {
-      await post(error instanceof Error ? error.message : "Could not deliver task update.");
-      return true;
-    }
     return false;
   }
 
@@ -1432,11 +1249,6 @@ export class SlackMessagingBot implements MessagingBot {
       event: slackEvent,
       ack,
       preStartupLogPrefix: "Skipping old message (pre-startup)",
-      isTaskControl: async () =>
-        isDM &&
-        (e.thread_ts
-          ? await this.isTaskThread(e.channel, e.thread_ts)
-          : (await this.hasRunningTaskThread(e.channel)) || isTaskStatusQuestion(slackEvent.text)),
       isAddressed: async () => {
         if (isDM) return true;
         const autoReplyMode = slackConversationAutoReplyMode(

@@ -237,9 +237,9 @@ as `JevRequestError`. Requests time out after 30 seconds and retry twice on
 408, 409, 429, and 5xx, as the previous SDK did. Cost is the token count at
 pi-ai's catalog price.
 
-Jev is reached three ways — harness-internal decision points (Slack auto-reply
-`addressed`, DM task intent) and the `jev` tool (`tools/jev.ts`, a direct
-pass-through the model composes state/questions for itself) — all through
+Jev is reached two ways — the harness-internal decision point (Slack auto-reply
+`addressed`) and the `jev` tool (`tools/jev.ts`, a direct
+pass-through the model composes state/questions for itself) — both through
 this one `evaluateWithJev`. Harness-internal call sites never show the model
 the result and fail closed to the pre-Jev rule when the key is missing; the
 tool surfaces a missing key as a tool error the model sees, since it must
@@ -269,40 +269,11 @@ prompt points it at the CLI's version-matched skill (`agent-browser skills get c
 - Session file naming, chat synchronization, and thread lineage stay
   in `src/sessions/`.
 
-## Task handoff
+## Run control
 
-`start_task` is offered only when the active responder supports task admission. The native
-`before_tool` hook blocks every call in a mixed handoff/effect batch; a successful
-single handoff terminates the parent turn. Slack owns anchor creation and scoped
-queue admission; the task uses the existing independent session runner, not a
-new execution loop.
-
-`PiAgentWrapper.steer` accepts text controls from the current actor only. It
-records a `mikan.control_input` custom entry before its checks and before
-submitting a steer, so chat-history sync never replays a message that took the
-control path, whether accepted, cancelled, or rejected. Attachments require
-stopping and starting another turn. Native steering acceptance means queued for
-the next tool-batch boundary, not proof of model compliance.
-
-The marker deliberately precedes the checks; do not move it after them:
-
-- A cancelled steer must not return: syncing the log after a stop withdrew a
-  queued steer put it back into the next context as an instruction
-  (`docs/research/conversation-task-handoff.md`, experiment C9; guarded by
-  `slack-task.test.ts`).
-- A rejected steer is not lost silently. Every rejection is posted back telling
-  the user to send again or stop first, so syncing the original as well would
-  show the model the same instruction twice.
-- The current-actor check keeps a channel task to its requester: anyone in the
-  channel can mention the bot in the task thread, and only the requester's text
-  steers it. Others get the rejection notice.
-
-`task_status` is a responder-bound read-only query, advertised only when supported. It exposes no cross-office task lookup.
 `SessionStore.inspectExecution` reads the live run and mikan's run record through
 the office's shared storage (`OfficeStorage.acquire`); it does not create a runner.
 
 Runner cancellation is remembered across prompt preparation. Stop before Pi starts
-prevents a later prompt; preparation/settlement controls are rejected with a retry
-message instead of creating queued work. Final renderer replacements propagate
-transport failure, unlike best-effort incremental updates, so failed result updates
-do not trigger task completion mentions.
+prevents a later prompt. Final renderer replacements propagate transport failure,
+unlike best-effort incremental updates.

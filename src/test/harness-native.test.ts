@@ -13,7 +13,6 @@ import type { Api, Model, MutableModels } from "@earendil-works/pi-ai";
 import { getCurrentSystemPrompt, getCurrentTools } from "@earendil-works/pi-ai/utils/transcript";
 import { MikanAgentSession } from "../harness/session.js";
 import { MikanModels } from "../harness/models.js";
-import { createTaskTool } from "../harness/tools/task.js";
 import type { HarnessEvent, MikanAgentSessionOptions } from "../harness/types.js";
 import { SessionStore } from "../sessions/session-store.js";
 import {
@@ -251,7 +250,7 @@ test("codemode store values last across calls and a restart, and /new clears the
 
 test.each([
   { code: 'await tools.probe({value: "bad"});', error: "Validation failed", executions: 0 },
-  { code: "await tools.start_task({});", error: "tools.start_task does not exist", executions: 0 },
+  { code: "await tools.model_only({});", error: "tools.model_only does not exist", executions: 0 },
   { code: "await tools.codemode({});", error: "tools.codemode does not exist", executions: 0 },
   { code: '// @options: {"timeout_ms": 20}\nwhile (true) {}', error: "timed out", executions: 0 },
   { code: "throw new Error(typeof process);", error: "undefined", executions: 0 },
@@ -272,8 +271,14 @@ test.each([
     parameters: { type: "object", properties: { value: { type: "number" } }, required: ["value"] },
     execute: invoke,
   };
-  const handoff = createTaskTool().tool as ToolRegistration;
-  const session = wrap(await openSessionAt(file), [tool, handoff]);
+  const modelOnly: ToolRegistration = {
+    name: "model_only",
+    description: "Callable by the model, not by scripts",
+    callers: ["model"],
+    parameters: { type: "object", properties: {} },
+    execute: invoke,
+  };
+  const session = wrap(await openSessionAt(file), [tool, modelOnly]);
   faux.setResponses([
     fauxAssistantMessage(fauxToolCall("codemode", { label: "Check nested calls", code }), {
       stopReason: "toolUse",
@@ -283,7 +288,7 @@ test.each([
       return fauxAssistantMessage("done");
     },
   ]);
-  await session.prompt("check", { allowTaskHandoff: true });
+  await session.prompt("check");
   expect(invoke).toHaveBeenCalledTimes(executions);
   expect(JSON.stringify(await contextMessages(session))).toContain(error);
 });

@@ -2,11 +2,7 @@ import type { Office, Workspace } from "../office/types.js";
 import type { Api, Model } from "@earendil-works/pi-ai";
 import type { MikanModels } from "./models.js";
 import { SessionStore } from "../sessions/session-store.js";
-import {
-  CONTROL_INPUT_CUSTOM_TYPE,
-  RUN_CAUSE_CUSTOM_TYPE,
-  type ThreadRootMessage,
-} from "../sessions/types.js";
+import { RUN_CAUSE_CUSTOM_TYPE, type ThreadRootMessage } from "../sessions/types.js";
 import { MikanAgentSession, DEFAULT_EVENT_BUDGET } from "./session.js";
 import { createMikanTools } from "./tools/index.js";
 import { readRuntimeFile } from "./tools/attach.js";
@@ -43,7 +39,6 @@ import { addLifecycleEvent, updateActiveSpanAttribution } from "../observability
 import type { ChatHistorySync } from "../sessions/chat-history-sync.js";
 import { conversationIdOf, isThreadSessionKey } from "../sessions/session-key.js";
 import type { PlatformToolPack } from "./tools/types.js";
-import { isTaskRunId } from "./tools/task.js";
 import { isContinuedRunId } from "./continued-run.js";
 import { loadMikanSkills } from "./skills.js";
 import {
@@ -59,7 +54,6 @@ import {
   activateRunPresentation,
   createRunState,
   finalizeRunResponse,
-  getFinalAssistantText,
   reportUsageSummary,
 } from "./presenter.js";
 
@@ -283,15 +277,12 @@ async function driveSession(
   session: MikanAgentSession,
   message: ConversationMessage,
   prepared: PreparedRunContext,
-  responder: ConversationResponder,
 ): Promise<void> {
   if (isContinuedRunId(message.id)) {
     await session.continueInterrupted();
     return;
   }
   await session.prompt(prepared.userMessage, {
-    allowTaskHandoff: responder.startTask !== undefined,
-    allowTaskStatus: responder.getTaskStatus !== undefined && !isTaskRunId(message.id),
     images: prepared.imageAttachments.length > 0 ? prepared.imageAttachments : undefined,
     budget: isEventRunId(message.id) ? DEFAULT_EVENT_BUDGET : undefined,
   });
@@ -300,7 +291,6 @@ async function driveSession(
 async function runPreparedTurn(params: PreparedTurnParams): Promise<{
   stopReason: string;
   errorMessage?: string;
-  finalText: string;
 }> {
   const {
     prepared,
@@ -342,7 +332,7 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
   });
 
   await session.sessionStore.appendCustomEntry(RUN_CAUSE_CUSTOM_TYPE, { messageId: message.id });
-  await driveSession(session, message, prepared, responder);
+  await driveSession(session, message, prepared);
   await presentation.wait();
   if (session.getLastRunStats().status === "aborted") runState.stopReason = "aborted";
 
@@ -368,7 +358,6 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
       : undefined;
 
   await finalizeRunResponse(responder, session, runState, {
-    initialTask: message.id.startsWith("task:"),
     triggerSessionLink: isEventRunId(message.id) ? createSessionViewLink?.() : undefined,
     createOverflowLink: createSessionViewLink,
     platform: platform.name,
@@ -389,7 +378,6 @@ async function runPreparedTurn(params: PreparedTurnParams): Promise<{
   return {
     stopReason: runState.stopReason,
     errorMessage: runState.errorMessage,
-    finalText: getFinalAssistantText(session),
   };
 }
 
@@ -410,27 +398,6 @@ interface RunnerInterfaceParams {
   sessionManager: SessionStore;
   chatSessionManager: ChatHistorySync;
   toolBindings: MikanToolBindings;
-}
-
-async function steerRun(
-  session: MikanAgentSession,
-  activeMessage: ConversationMessage | undefined,
-  message: ConversationMessage,
-): Promise<boolean> {
-  if (!activeMessage) return false;
-  await session.sessionStore.appendCustomEntry(CONTROL_INPUT_CUSTOM_TYPE, {
-    messageId: message.id,
-  });
-  if (!session.isActiveRun)
-    throw new Error("Task is preparing or settling. Please retry this update shortly.");
-  if (message.userId !== activeMessage.userId)
-    throw new Error("Only the task's current actor can guide this run.");
-  if (message.attachments?.length)
-    throw new Error("Stop the task before continuing with new attachments.");
-  if (!(await session.steer(`[${message.userName ?? message.userId}]: ${message.text}`))) {
-    throw new Error("Task settled while receiving this update. Please send it again to continue.");
-  }
-  return true;
 }
 
 async function publishRunLifecycle<T>(
@@ -470,10 +437,8 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
   const publishRunEvent: RunEventListener | undefined = runEvents
     ? (event) => runEvents.publish(office.address, sessionKey, event)
     : undefined;
-  let activeMessage: ConversationMessage | undefined;
   let stopped = false;
   return {
-    steer: (message) => steerRun(session, activeMessage, message),
     compact: (instructions) => session.compact(instructions),
     async syncChatHistory(currentMessageId?: string): Promise<void> {
       await chatSessionManager.syncSessionManager({
@@ -485,7 +450,6 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
     },
 
     async run(message, responder, platform) {
-      activeMessage = message;
       stopped = false;
       let presentation: RunPresentation | undefined;
       return publishRunLifecycle(publishRunEvent, message, async () => {
@@ -524,7 +488,6 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
             sessionView,
           });
         } finally {
-          activeMessage = undefined;
           presentation?.dispose();
         }
       });
@@ -537,15 +500,6 @@ function createRunnerInterface(params: RunnerInterfaceParams): PiAgentWrapper {
 
     async dispose(): Promise<void> {
       await sessionManager.close();
-    },
-
-    getCurrentStep(): { toolName?: string; label?: string } | undefined {
-      const first = runState.pendingTools.values().next().value;
-      if (!first) return undefined;
-      return {
-        toolName: first.toolName,
-        label: (first.args as { label?: string })?.label,
-      };
     },
   };
 }

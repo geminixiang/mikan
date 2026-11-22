@@ -71,7 +71,6 @@ export interface SlackIncomingDispatch {
   event: SlackEvent & { sessionKey: string };
   ack: () => void;
   preStartupLogPrefix: string;
-  isTaskControl: () => Promise<boolean>;
   isAddressed: () => Promise<boolean>;
   magicWordAddressed?: boolean;
 }

@@ -27,15 +27,7 @@ function mockEventStore(): EventStore {
   };
 }
 
-const EXEMPT_TOOL_NAMES = new Set([
-  "start_task",
-  "task_status",
-  "event",
-  "read",
-  "write",
-  "edit",
-  "bash",
-]);
+const EXEMPT_TOOL_NAMES = new Set(["event", "read", "write", "edit", "bash"]);
 
 describe("every agent-facing tool requires a label parameter", () => {
   test("across the full assembled tool list, including the GitHub platform pack", () => {

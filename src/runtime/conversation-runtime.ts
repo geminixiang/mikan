@@ -1,7 +1,6 @@
 import type {
   MessagingBot,
   ConversationContext,
-  ConversationMessage,
   ConversationEvent,
   CompactOutcome,
   HandleCompactCommandOptions,
@@ -52,8 +51,6 @@ import type {
 } from "./types.js";
 import { errorMessage } from "../unknown-values.js";
 import { SessionStore } from "../sessions/session-store.js";
-import { stripTriggerSignature } from "../sessions/history-line.js";
-import { isTaskRunId } from "../harness/tools/task.js";
 import { isContinuedRunId } from "../harness/continued-run.js";
 
 type RunResult = Awaited<ReturnType<PiAgentWrapper["run"]>>;
@@ -113,24 +110,15 @@ class ConversationRuntimeImpl implements ConversationRuntime {
     const sessions: RunningSession[] = [];
     for (const state of this.sessions.runningStates()) {
       if (state.startedAt) {
-        const currentStep = state.runner.getCurrentStep();
         sessions.push({
           address: state.address,
           sessionKey: state.sessionKey,
           startedAt: state.startedAt,
           lastActivityAt: state.lastActivityAt,
-          currentTool: currentStep?.label || currentStep?.toolName,
-          stopping: state.stopRequested ? true : undefined,
         });
       }
     }
     return sessions;
-  }
-
-  async steer(message: ConversationMessage): Promise<boolean> {
-    const state = this.sessions.get(message.address, message.sessionKey);
-    if (!state?.running) return false;
-    return state.runner.steer ? state.runner.steer(message) : false;
   }
 
   async handleStop(
@@ -246,8 +234,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
     const lease = await this.acquireRunLease(options, sessionKey);
     const { state } = lease;
-    state.detachOnShutdown =
-      isTaskRunId(event.ts) || options.context.platform.continuesInterruptedRuns === true;
+    state.detachOnShutdown = options.context.platform.continuesInterruptedRuns === true;
     log.logInfo(`[${conversationId}] Starting run: ${event.text.substring(0, 50)}`);
     const runPromise = this.sessions.settle(state, () =>
       this.executeRun(options, sessionKey, state),
@@ -324,27 +311,9 @@ class ConversationRuntimeImpl implements ConversationRuntime {
 
       if (result?.stopReason === "aborted") {
         await postAbortNotice(state, bot, conversationId, context.platform.name);
-      } else if (result) {
-        await this.reportTaskOutcome(event.address, sessionKey, result.finalText ?? "");
       }
     } finally {
       recordGauge("agent.sessions.active", this.sessions.settlementCount() - 1);
-    }
-  }
-
-  private async reportTaskOutcome(
-    address: OfficeAddress,
-    sessionKey: string,
-    answer: string,
-  ): Promise<void> {
-    try {
-      await SessionStore.reportTaskOutcome(
-        this.options.workspace.office(address),
-        sessionKey,
-        stripTriggerSignature(answer),
-      );
-    } catch (error) {
-      log.logWarning(`[${sessionKey}] Could not report the task outcome`, errorMessage(error));
     }
   }
 

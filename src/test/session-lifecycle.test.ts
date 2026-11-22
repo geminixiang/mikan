@@ -11,7 +11,6 @@ function fakeRunner(overrides: Partial<PiAgentWrapper> = {}): PiAgentWrapper {
     syncChatHistory: vi.fn().mockResolvedValue(undefined),
     run: vi.fn().mockResolvedValue({ stopReason: "stop" }),
     abort: vi.fn(),
-    getCurrentStep: vi.fn().mockReturnValue(undefined),
     dispose: vi.fn().mockResolvedValue(undefined),
     compact: vi.fn().mockResolvedValue({ compacted: false }),
     ...overrides,

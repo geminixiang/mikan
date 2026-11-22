@@ -7,7 +7,7 @@ description: Use when a behavior change needs before-and-after acceptance number
 
 An acceptance eval runs the same black-box scenarios against two checkouts, `main` and the change's branch, and prints one result per case. The user accepts the change from the table of baseline, expected, and actual results, so build it before the implementation and leave it unchanged after the user approves it.
 
-[`references/slack-task-state.eval.ts`](references/slack-task-state.eval.ts) is a worked example: Slack DM tasks driven through `SlackMessagingBot` and the conversation runtime with a fake Socket Mode connection, a fake Web API, and Pi's faux provider, including a restart, a lost office log, a large log, and an upgrade. Start a new eval by copying the `references/` folder.
+[`references/subagent.eval.ts`](references/subagent.eval.ts) is a worked example: the `subagent` tool driven through `SlackMessagingBot` and the conversation runtime with a fake Socket Mode connection, a fake Web API, and Pi's faux provider. Its cases cover the answer a delegated task returns, the limit on delegation, how many children run at once, `stop`, usage, and the session list. It has no upgrade case; `run.sh` runs the test whose name contains "upgrade" twice, first on the checkout that writes the state (`EVAL_UPGRADE_PHASE=create`) and then on the one that reads it (`read`), with `EVAL_UPGRADE_DIR` naming where the state is kept between the two. Start a new eval by copying the `references/` folder.
 
 ## Steps
 

@@ -173,7 +173,6 @@ function fakeRunner(): PiAgentWrapper {
     syncChatHistory: vi.fn(),
     abort: vi.fn(),
     dispose: vi.fn().mockResolvedValue(undefined),
-    getCurrentStep: vi.fn(),
     compact: vi.fn().mockResolvedValue({ compacted: false }),
   };
 }

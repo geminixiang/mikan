@@ -1,9 +1,4 @@
-import {
-  CONTROL_INPUT_CUSTOM_TYPE,
-  RUN_CAUSE_CUSTOM_TYPE,
-  type ImportedSessionEntry,
-  type SessionEntry,
-} from "./types.js";
+import { RUN_CAUSE_CUSTOM_TYPE, type ImportedSessionEntry, type SessionEntry } from "./types.js";
 import type { Office } from "../office/types.js";
 import { SessionStore } from "./session-store.js";
 import type { ConversationLogMessage } from "../types.js";
@@ -328,21 +323,7 @@ async function syncSessionManagerFromLog(
 
   const existingEntries = await sessionManager.getEntries();
   const resetAt = getLatestChatSyncResetAt(existingEntries);
-  const controlledIds = new Set(
-    existingEntries.flatMap((entry) => {
-      if (
-        entry.type !== "custom" ||
-        entry.customType !== CONTROL_INPUT_CUSTOM_TYPE ||
-        !isRecord(entry.data)
-      )
-        return [];
-      return typeof entry.data.messageId === "string" ? [entry.data.messageId] : [];
-    }),
-  );
-  const eligibleRecords = records.filter(
-    (record) =>
-      !controlledIds.has(record.message.ts ?? "") && (!resetAt || isAfterReset(record, resetAt)),
-  );
+  const eligibleRecords = records.filter((record) => !resetAt || isAfterReset(record, resetAt));
   const lastSyncedMessageId = getLatestChatSyncMessageId(existingEntries);
   const lastSyncedIndex = lastSyncedMessageId
     ? eligibleRecords.findIndex((record) => record.message.ts === lastSyncedMessageId)

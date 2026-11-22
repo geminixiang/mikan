@@ -19,11 +19,8 @@ import {
   createRegistry,
   defineDoc,
   defineEntry,
-  defineExtension,
-  defineTask,
   type Conversation,
   type ConversationId,
-  type ConversationRecord,
   type Cursor,
   type EntryId,
   type EntryRecord,
@@ -52,8 +49,6 @@ import type {
   SessionExecution,
   SessionSpend,
   ResponseUsage,
-  TaskBrief,
-  TaskSessionState,
 } from "./types.js";
 import { RUN_CAUSE_CUSTOM_TYPE } from "./types.js";
 import { loadMcpTools } from "../harness/mcp.js";
@@ -67,23 +62,6 @@ import { errorMessage, isRecord, toJsonValue } from "../unknown-values.js";
 
 const context = BACKGROUND_CONTEXT;
 const ENTRY_PAGE_SIZE = 500;
-
-const TaskAnchor = defineTask<TaskBrief | null, { phase: "done" }, null>({
-  name: "mikan.task-anchor",
-  version: 1,
-  initial: () => ({ phase: "done" }),
-  phases: {
-    done: (_task, runtime, taskContext) =>
-      runtime.commit(
-        () => ({ status: "terminal", outcome: { status: "completed", result: null } }),
-        taskContext,
-      ),
-  },
-  abort: (_task, runtime, taskContext) =>
-    runtime.commit(() => ({ status: "terminal", outcome: { status: "aborted" } }), taskContext),
-});
-
-const TaskAnchors = defineExtension({ name: "mikan.task-anchors", tasks: [TaskAnchor] });
 
 type SessionDocState = Partial<{
   name: string;
@@ -262,9 +240,7 @@ class OfficeStorage {
   private readonly owners = new Map<ConversationId, ConversationId>();
   private readonly ownedProviderSessions = new Map<string, ConversationId>();
 
-  private constructor(private readonly path: string | null) {
-    this.registry.install(TaskAnchors);
-  }
+  private constructor(private readonly path: string | null) {}
 
   get harness(): Harness {
     if (!this.opened) throw new Error("Office session storage is not open");
@@ -512,42 +488,6 @@ class OfficeStorage {
   }
 }
 
-const OWNED_CONVERSATION_PAGE_SIZE = 100;
-
-async function ownedConversations(
-  storage: OfficeStorage,
-  ownerConversationId: number,
-): Promise<ConversationRecord[]> {
-  return storage.harness.commit(async (tx) => {
-    const owned: ConversationRecord[] = [];
-    let cursor: Cursor | undefined;
-    do {
-      const page = await tx.scanConversations(
-        { ownerConversationId: ownerConversationId as ConversationId, order: "descending" },
-        OWNED_CONVERSATION_PAGE_SIZE,
-        cursor,
-      );
-      owned.push(...page.items);
-      cursor = page.next;
-    } while (cursor !== undefined);
-    return owned;
-  }, context);
-}
-
-async function readTaskState(
-  storage: OfficeStorage,
-  sessionKey: string,
-  conversationId: ConversationId,
-  anchorId: TaskId,
-): Promise<TaskSessionState> {
-  const anchor = await storage.harness.commit((tx) => tx.task(anchorId), context);
-  return {
-    sessionKey,
-    acknowledgement: briefAcknowledgement(anchor?.input),
-    ...(await readExecution(storage, conversationId)),
-  };
-}
-
 async function readExecution(
   storage: OfficeStorage,
   conversationId: ConversationId,
@@ -563,12 +503,6 @@ async function readExecution(
         ? { status: run.status, endedAt: run.endedAt }
         : undefined,
   };
-}
-
-function briefAcknowledgement(input: JsonValue | undefined): string | undefined {
-  return isRecord(input) && typeof input.acknowledgement === "string"
-    ? input.acknowledgement
-    : undefined;
 }
 
 function writeSessionIndex(tx: Tx, key: string, record: SessionIndexRecord): Promise<void> {
@@ -607,32 +541,6 @@ async function createSession(
     const created = record;
     await conversation.commit((tx) => writeSessionIndex(tx, key, created), context);
   }
-  return { conversation, record };
-}
-
-async function createTaskSession(
-  storage: OfficeStorage,
-  key: string,
-  requesterKey: string,
-  brief: TaskBrief,
-): Promise<{ conversation: Conversation; record: SessionIndexRecord }> {
-  const requester = await lookupSession(storage, requesterKey);
-  if (!requester) throw new Error(`Task requester session not found: ${requesterKey}`);
-  const record = await requester.conversation.commit(async (tx) => {
-    const anchor = await tx.createTask(TaskAnchor, brief, {
-      ownership: { kind: "conversation" },
-      background: true,
-    });
-    const child = await tx.createConversation({ ownership: { kind: "task", taskId: anchor } });
-    const created = { conversationId: child.id, id: randomUUID(), createdAt: Date.now() };
-    await writeSessionIndex(tx, key, created);
-    return created;
-  }, context);
-  const conversation = await storage.harness.conversation(
-    record.conversationId as ConversationId,
-    context,
-  );
-  if (!conversation) throw new Error(`Task session was not created: ${key}`);
   return { conversation, record };
 }
 
@@ -913,17 +821,6 @@ export class SessionStore implements SessionInspection {
     return SessionStore.openOrCreate(office, key, (storage) => createSession(storage, key));
   }
 
-  static openTask(
-    office: Office,
-    key: string,
-    requesterKey: string,
-    brief: TaskBrief,
-  ): Promise<SessionStore> {
-    return SessionStore.openOrCreate(office, key, (storage) =>
-      createTaskSession(storage, key, requesterKey, brief),
-    );
-  }
-
   private static async openOrCreate(
     office: Office,
     key: string,
@@ -1035,33 +932,6 @@ export class SessionStore implements SessionInspection {
     });
   }
 
-  static async reportTaskOutcome(office: Office, key: string, answer: string): Promise<void> {
-    await withOfficeStorage(office, async (storage) => {
-      const task = await lookupSession(storage, key);
-      if (!task) return;
-      const view = await task.conversation.watch(context);
-      const owner = view.value.conversation.owner;
-      await view.stop();
-      if (!owner) return;
-      const requester = await storage.harness.conversation(owner.conversationId, context);
-      if (!requester) return;
-      const message: Message = {
-        role: "user",
-        content: `[background task ${key} finished] ${answer}`,
-        timestamp: Date.now(),
-      };
-      await storage.whenContinued();
-      await requester.submit(
-        {
-          type: "write",
-          requestId: `task-report:${task.conversation.id}:${randomUUID()}`,
-          entry: { kind: UserEntry.kind, model: [durableMessage(message)] },
-        },
-        context,
-      );
-    });
-  }
-
   static async continueInterrupted(office: Office): Promise<string[]> {
     const path = office.sessionsPath;
     if (!existsSync(path) || Date.now() - lastWriteMs(path) > CONTINUATION_WINDOW_MS) return [];
@@ -1078,25 +948,6 @@ export class SessionStore implements SessionInspection {
     } finally {
       await storage.release();
     }
-  }
-
-  static async listTasks(office: Office, requesterKey: string): Promise<TaskSessionState[]> {
-    if (!existsSync(office.sessionsPath)) return [];
-    return withOfficeStorage(office, async (storage) => {
-      const index = await storage.index();
-      const requester = index[requesterKey];
-      if (!requester) return [];
-      const keyOf = new Map(
-        Object.entries(index).map(([key, record]) => [record.conversationId, key]),
-      );
-      const tasks: TaskSessionState[] = [];
-      for (const child of await ownedConversations(storage, requester.conversationId)) {
-        const sessionKey = keyOf.get(child.id);
-        if (sessionKey === undefined || child.owner === undefined) continue;
-        tasks.push(await readTaskState(storage, sessionKey, child.id, child.owner.taskId));
-      }
-      return tasks;
-    });
   }
 
   static async inspectExecution(office: Office, key: string): Promise<SessionExecution> {
@@ -1135,19 +986,6 @@ export class SessionStore implements SessionInspection {
           ? [{ timestamp: message.timestamp, usage: message.usage }]
           : [];
       });
-    });
-  }
-
-  static async isTask(office: Office, key: string): Promise<boolean> {
-    if (!existsSync(office.sessionsPath)) return false;
-    return withOfficeStorage(office, async (storage) => {
-      const record = (await storage.index())[key];
-      if (!record) return false;
-      const conversation = await storage.harness.commit(
-        (tx) => tx.conversation(record.conversationId as ConversationId),
-        context,
-      );
-      return conversation?.owner !== undefined;
     });
   }
 

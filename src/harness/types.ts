@@ -139,7 +139,6 @@ export interface FinalizeRunResponseOptions {
   model?: Model<Api>;
   sessionConversation?: string;
   sessionUuid?: string;
-  initialTask?: boolean;
 }
 
 export interface PreparedRunContext {

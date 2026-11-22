@@ -266,7 +266,7 @@ describe("presenter event routing", () => {
     const start = (toolCallId: string, toolName: string) =>
       emit({ type: "tool_execution_start", toolCallId, toolName, args: { label: toolName } });
 
-    await start("t0", "task_status");
+    await start("t0", "react");
     expect(responder.react).not.toHaveBeenCalled();
     await start("t1", "bash");
     await start("t2", "read");

@@ -37,6 +37,14 @@ change in a minor release.
 
 ### Removed
 
+- Slack task threads (ADR 0032): the `start_task` and `task_status` tools, the canned replies to
+  "is it done?", and steering a running turn with a follow-up message. The model does long work in
+  the conversation where it was asked, and a message sent meanwhile is answered after it; before,
+  the work moved to a new thread and the conversation kept answering. Existing task threads become
+  ordinary threads: a reply there is answered as in any thread, and a run that finishes there no
+  longer mentions the requester or writes its answer into the requester's conversation. For work
+  that should not hold the conversation, the model can schedule it with the `event` tool or
+  background a command with the shell; nothing tells it when a backgrounded command ends.
 - The `host` and `container:<name>` sandboxes. `--sandbox=host` and `--sandbox=container:<name>`
   stop mikan at startup with an error that names `oci`. Every office runs in a container mikan
   manages, which is the only sandbox that enforced office visibility and mounted vault files. A

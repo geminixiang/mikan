@@ -456,7 +456,7 @@ describe("recordJevOutcome", () => {
 
   test("never captures a Sentry error/exception — a Jev failure is not treated as a bug", () => {
     recordJevOutcome({
-      caller: "task_intent",
+      caller: "slack_auto_reply",
       status: "error",
       errorType: "JevNotConfiguredError",
     });

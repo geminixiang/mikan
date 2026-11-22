@@ -51,8 +51,6 @@ tools depend on the connected server's `listTools()` response.
 | `jev`                   |     ✓     |        ✓        |        —        |          —           |                              —                              | State/questions in arguments; answers, model and usage in result.                                         |
 | `web_fetch`             |     ✓     |        ✓        |        —        |          —           |                              —                              | URL in arguments; page Markdown or API text, bounded like MCP text (full result spilled).                 |
 | `history`               |     ✓     |        ✓        |        —        |          —           |                              —                              | Action/query/session/paging; bounded entries from this office's sessions (incl. tool output) or chat log. |
-| `start_task`            |     ✓     |        ✓        |        —        |          —           |                              —                              | Task target and admission confirmation.                                                                   |
-| `task_status`           |     ✓     |        ✓        |        —        |          —           |              Session key and task status JSON.              |
 | `slack_blockkit`        |     ✓     |        ✓        |        —        |          —           | Blocks/text in arguments; posted/updated message timestamp. |
 | `github_pr`             |     ✓     |        ✓        |        —        |          —           |     PR request in arguments; operation status and URL.      |
 | `github_checks`         |     ✓     |        ✓        |        —        |          —           |          Branch/job ID; check summary or job log.           |
@@ -85,14 +83,14 @@ listing callable tools as declarations, `searchTools()` / `describeTool()` /
 `describeNamespace()`, result layout and truncation (spilled through the
 run's `ExecutionEnv`), `store()` / `load()` (Pi's `pi.codemode.store`
 document, which `/new` clears), and replay after a restart. Each nested call
-is its own `pi.tool` task, so mikan's `ToolTask` hooks (the `start_task` batch
-rule, run budgets) and its tool events apply to it as to a model call. A
+is its own `pi.tool` task, so mikan's run budgets and its tool events apply to
+it as to a model call. A
 schema-less tool resolves to its text, images left out; a tool with
 `structuredOutputSchema` resolves to its `structuredOutput`, also on an error
 result, so `tools.bash` gives `{ output, exitCode, ... }`.
 
-mikan supplies only the tool fields Pi reads: `start_task` has
-`callers: ["model"]`, so scripts cannot start tasks; Pi's `codemode` and
+mikan supplies only the tool fields Pi reads: `subagent` has
+`callers: ["model"]`, so scripts cannot delegate; Pi's `codemode` and
 `tool_search` take no `label`, so the session's extension wraps them with a
 required one (`withRequiredLabel`).
 

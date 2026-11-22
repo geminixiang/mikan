@@ -1,5 +1,5 @@
 ---
-status: accepted
+status: superseded by [ADR 0032](0032-remove-task-threads.md)
 ---
 
 # Tasks run as background child conversations

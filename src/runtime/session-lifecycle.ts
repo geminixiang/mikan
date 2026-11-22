@@ -271,7 +271,7 @@ export class SessionLifecycle {
   async closeAll(): Promise<void> {
     const detached = this.detachedSessionIds();
     if (detached.size > 0) {
-      log.logInfo(`Leaving ${detached.size} task runs to resume after restart`);
+      log.logInfo(`Leaving ${detached.size} runs to continue after restart`);
     }
     const states = Array.from(this.states.entries()).flatMap(([id, state]) =>
       detached.has(id) ? [] : [state],

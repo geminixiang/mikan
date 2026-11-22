@@ -7,7 +7,6 @@ import { createGenerateImageTool } from "./generate-image.js";
 import type { ToolRegistration } from "@earendil-works/pi-durable";
 import { createSandboxTools } from "./pi-tools.js";
 import { withSecretRedaction } from "./secret-redaction.js";
-import { createTaskTools } from "./task.js";
 import { createSubagentTool } from "./subagent.js";
 import type { MikanToolContext } from "../types.js";
 import { createJevTool } from "./jev.js";
@@ -34,7 +33,6 @@ export function createMikanTools(
 } {
   const { tool: attachTool, setUploadFunction } = createAttachTool();
   const imageTool = imageGeneration ? createGenerateImageTool(imageGeneration) : undefined;
-  const { tools: taskTools, bindTasks } = createTaskTools();
   const { tool: reactTool, setReactFunction } = createReactTool();
   const jevTool = createJevTool();
   const { tool: eventTool, setEventContext } = createEventTool(eventStore);
@@ -50,7 +48,6 @@ export function createMikanTools(
       reactTool,
       jevTool,
       createWebFetchTool(),
-      ...taskTools,
       createSubagentTool(toolContext),
       ...packTools,
     ].map(withSecretRedaction),
@@ -70,7 +67,6 @@ export function createMikanTools(
         );
       });
       imageTool?.setUploadFunction((hostPath, title) => responder.uploadFile(hostPath, title));
-      bindTasks(responder);
       setReactFunction(responder.react ? (emoji) => responder.react!(emoji) : null);
       for (const pack of platformToolPacks) {
         pack.bindRun({

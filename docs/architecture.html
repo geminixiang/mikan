@@ -107,8 +107,8 @@
         Platform adapters send messages through intake to ConversationRuntime and SessionLifecycle,
         then runner and the pi-durable agent. Pi owns the model and tool loop. SessionStore keeps
         each office's sessions in one SQLite database. Tools execute through an authorized
-        ExecutionEnv in the sandbox. Presenter and responder return results to the platform. Slack
-        DM tasks use independent thread sessions; subagents use in-memory sessions. Vault and Office
+        ExecutionEnv in the sandbox. Presenter and responder return results to the platform. Each
+        Slack thread has its own session; subagents use in-memory sessions. Vault and Office
         projection supply execution authority. Sentry and OTLP receive content-free diagnostics.
       </desc>
       <defs>
@@ -199,7 +199,7 @@
       <text x="1310" y="525" class="heading">pi-durable agent</text>
       <text x="1310" y="566" class="body">pi-ai → model providers</text>
       <text x="1310" y="600" class="body">Model / tool loop</text>
-      <text x="1310" y="634" class="body">Retry / compact / steer / abort</text>
+      <text x="1310" y="634" class="body">Retry / compact / abort</text>
       <text x="1310" y="677" class="small">Native read · write · edit · bash</text>
 
       <rect x="1720" y="485" width="375" height="230" class="box" fill="#ffecd7" stroke="#ecb078" />
@@ -242,17 +242,17 @@
 
       <!-- Bottom row: separate concepts, succinct labels. -->
       <rect x="70" y="935" width="650" height="225" class="box" fill="#ffffff" stroke="#cbd6e4" />
-      <text x="95" y="977" class="heading">Slack DM tasks</text>
-      <text x="95" y="1015" class="body">Main DM → start_task → task thread</text>
-      <text x="95" y="1049" class="body">Independent session + runner</text>
-      <text x="95" y="1083" class="body">task_status · steer · stop</text>
-      <text x="95" y="1124" class="small">One session per task thread</text>
+      <text x="95" y="977" class="heading">Slack sessions</text>
+      <text x="95" y="1015" class="body">Top level → conversation session</text>
+      <text x="95" y="1049" class="body">Thread → its own session + runner</text>
+      <text x="95" y="1083" class="body">Queue · stop · continue after restart</text>
+      <text x="95" y="1124" class="small">One session per thread</text>
 
       <rect x="760" y="935" width="620" height="225" class="box" fill="#ffffff" stroke="#cbd6e4" />
       <text x="785" y="977" class="heading">Other execution paths</text>
       <text x="785" y="1015" class="body">Events / Web → conversation runtime</text>
       <text x="785" y="1049" class="body">Subagents → in-memory · parent awaits</text>
-      <text x="785" y="1083" class="body">Jev → auto-reply · DM task intent</text>
+      <text x="785" y="1083" class="body">Jev → auto-reply</text>
       <text x="785" y="1124" class="small">Shared office workspace</text>
 
       <rect x="1420" y="935" width="675" height="225" class="box" fill="#ffffff" stroke="#cbd6e4" />

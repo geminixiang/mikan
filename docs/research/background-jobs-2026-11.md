@@ -91,6 +91,8 @@ Open choice, delivery to a busy session: queue the notice behind the current tur
 
 ## Removed with this change
 
+The removal shipped on its own, before any background-job tool: [task-threads-removal-2026-11.md](task-threads-removal-2026-11.md) and [ADR 0032](../adr/0032-remove-task-threads.md). It differs from the list below in two places: `inspectExecution` and `readExecution` stay because tests of run continuation read them, and `notifyCompletion` goes too.
+
 `src/harness/tools/task.ts`, `src/adapters/slack/task-intent.ts`, `src/adapters/slack/task-status.ts`; their branches in `slack/bot.ts` (task context functions, `enqueueTaskRun`, `isTaskControl`, `deliverTaskUpdate`), `session-store.ts` (anchor, `openTask`, `createTaskSession`, `reportTaskOutcome`, `listTasks`, `isTask`, `readExecution`, `inspectExecution`), `runner.ts` (`allowTask*`, `initialTask`, `steerRun`), `session.ts` (tool filter, batch block), `presenter.ts` (task tool special cases, completion mention), `prompt.ts` (Slack Tasks), `types.ts` (`TaskStatus`, responder task functions, `steer`), the `task_intent` Jev caller, and the tests and eval for them. Kept: `jev-context.ts` (auto-reply uses it), `detachOnShutdown` (continuation uses it). `TaskAnchors` is unregistered too: E8 shows existing databases still open.
 
 Production use of `start_task` is not in the counts the refactor review used; reading it needs production access, which the owner grants.

@@ -26,7 +26,6 @@ import {
   type ObservabilitySpan,
 } from "../observability/index.js";
 import { appendTriggerAttribution } from "./prompt.js";
-import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { toRunEvent, toolLabel, toolResultText } from "./run-events.js";
 import { REACT_TOOL } from "./tools/react.js";
 
@@ -239,12 +238,7 @@ export async function finalizeRunResponse(
     return;
   }
   if (!finalText.trim()) return;
-  const published = await publishFinalResponse(responder, runState, finalText, options);
-  const didWork = Object.keys(session.getLastRunStats().toolCallCounts).some(
-    (name) => ![TASK_STATUS_TOOL, START_TASK_TOOL, REACT_TOOL].includes(name),
-  );
-  if (published && runState.stopReason === "stop" && (didWork || options?.initialTask))
-    await responder.notifyCompletion?.();
+  await publishFinalResponse(responder, runState, finalText, options);
 }
 
 async function publishFinalResponse(
@@ -252,7 +246,7 @@ async function publishFinalResponse(
   runState: RunnerSessionState,
   finalText: string,
   options?: FinalizeRunResponseOptions,
-): Promise<boolean> {
+): Promise<void> {
   try {
     const finalResponse = appendTriggerAttribution(
       finalText,
@@ -263,7 +257,6 @@ async function publishFinalResponse(
       createOverflowLink: options?.createOverflowLink,
       final: true,
     });
-    return true;
   } catch (err) {
     const errMsg = errorMessage(err);
     log.logWarning("Failed to replace message with final text", errMsg);
@@ -279,7 +272,6 @@ async function publishFinalResponse(
         finalTextLength: finalText.length,
       },
     });
-    return false;
   }
 }
 
@@ -358,13 +350,7 @@ export async function reportUsageSummary(ctx: UsageReportContext): Promise<void>
   });
 
   const summary = log.logUsageSummary(runState.logCtx!, totalUsage, contextTokens, contextWindow);
-  const toolNames = Object.keys(runStats.toolCallCounts);
-  const statusOnly = toolNames.length > 0 && toolNames.every((name) => name === TASK_STATUS_TOOL);
-  if (
-    platform.diagnostics?.showUsageSummary === true &&
-    !runState.finalResponseHandledByTool &&
-    !statusOnly
-  ) {
+  if (platform.diagnostics?.showUsageSummary === true && !runState.finalResponseHandledByTool) {
     runState.queue!.enqueue(
       () => responder.respondDiagnostic(summary, { style: "muted" }),
       "usage summary",
@@ -425,14 +411,12 @@ type LifecycleEvent = Extract<
 
 function runningTools(runState: RunnerSessionState): ToolTiming[] {
   const now = Date.now();
-  return [...runState.pendingTools.values()]
-    .filter((pending) => pending.toolName !== START_TASK_TOOL)
-    .map((pending) => ({
-      label: toolLabel(pending.args, pending.toolName),
-      toolName: pending.toolName,
-      durationMs: now - pending.startTime,
-      isError: false,
-    }));
+  return [...runState.pendingTools.values()].map((pending) => ({
+    label: toolLabel(pending.args, pending.toolName),
+    toolName: pending.toolName,
+    durationMs: now - pending.startTime,
+    isError: false,
+  }));
 }
 
 function observeToolStart(event: ToolStartEvent, context: RunObserverContext): void {
@@ -446,7 +430,6 @@ function observeToolStart(event: ToolStartEvent, context: RunObserverContext): v
     args: event.args,
     startTime: Date.now(),
   });
-  if (event.toolName === START_TASK_TOOL) return;
   spansFor(runState).tools.set(
     event.toolCallId,
     startOperationSpan(
@@ -499,18 +482,6 @@ function observeToolEnd(event: ToolEndEvent, context: RunObserverContext): void 
   if (event.isError) runState.toolErrorCount += 1;
   const pending = runState.pendingTools.get(event.toolCallId);
   runState.pendingTools.delete(event.toolCallId);
-  if (event.toolName === START_TASK_TOOL) {
-    if (!event.isError) runState.finalResponseHandledByTool = true;
-    else
-      reportUserFacingError(new Error("Task admission failed"), {
-        domain: "mikan",
-        surface: "task_handoff",
-        operation: "admit_task",
-        severity: "error",
-        context: { sessionId: logCtx.sessionId, toolCallId: event.toolCallId },
-      });
-    return;
-  }
   const durationMs = event.durationMs ?? (pending ? Date.now() - pending.startTime : 0);
   runState.completedTools.push({
     label: toolLabel(pending?.args, event.toolName),
@@ -720,8 +691,6 @@ type RunEventOf<T extends RunEvent["type"]> = Extract<RunEvent, { type: T }>;
 
 const WORK_ACKNOWLEDGEMENT_REACTION = "saluting_face";
 
-const TOOLS_THAT_ARE_NOT_WORK = new Set([START_TASK_TOOL, TASK_STATUS_TOOL, REACT_TOOL]);
-
 function acknowledgeWorkOnce(context: FrontProjectionContext): void {
   const { runState, responder } = context;
   if (runState.workAcknowledged || !responder.react) return;
@@ -733,8 +702,7 @@ function acknowledgeWorkOnce(context: FrontProjectionContext): void {
 
 function presentToolStarted(event: RunEventOf<"tool_started">, context: FrontProjectionContext) {
   const { runState, responder, queue } = context;
-  if (!TOOLS_THAT_ARE_NOT_WORK.has(event.toolName)) acknowledgeWorkOnce(context);
-  if (event.toolName === START_TASK_TOOL || event.toolName === TASK_STATUS_TOOL) return;
+  if (event.toolName !== REACT_TOOL) acknowledgeWorkOnce(context);
   runState.answerStreamStarted = false;
   runState.toolProgress.set(event.toolCallId, { label: event.label, status: "running" });
   queue.enqueue(() => replaceResponseWithToolProgress(responder, runState), "tool progress update");
@@ -742,10 +710,8 @@ function presentToolStarted(event: RunEventOf<"tool_started">, context: FrontPro
 
 function presentToolEnded(event: RunEventOf<"tool_ended">, context: FrontProjectionContext) {
   const { runState, responder, queue } = context;
-  if (event.toolName === START_TASK_TOOL) return;
   const progress = runState.toolProgress.get(event.toolCallId);
   if (progress) progress.status = event.isError ? "error" : "done";
-  if (event.toolName === TASK_STATUS_TOOL) return;
   queue.enqueue(() => replaceResponseWithToolProgress(responder, runState), "tool progress update");
 }
 

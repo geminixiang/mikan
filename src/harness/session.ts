@@ -19,7 +19,6 @@ import {
   CompactionTask,
   GenerationTask,
   LiveDoc,
-  ToolTask,
   defineExtension,
   hook,
   section,
@@ -33,7 +32,6 @@ import {
   type Extension,
   type HookRegistration,
   type LiveState,
-  type ToolExecutionApi,
   type ToolRegistration,
   type UsageState,
 } from "@earendil-works/pi-durable";
@@ -53,7 +51,6 @@ import type {
 
 import * as log from "../log.js";
 import { withRequiredLabel } from "./tools/pi-tools.js";
-import { START_TASK_TOOL, TASK_STATUS_TOOL } from "./tools/task.js";
 import { renderMcpServersSection } from "./mcp.js";
 import { CodemodeSandbox } from "@earendil-works/pi-codemode";
 import { createCodemodeExtension } from "@earendil-works/pi-durable/codemode";
@@ -78,8 +75,6 @@ interface RunOptions {
   images?: ImageContent[];
   budget?: BudgetSettings;
   tools?: ToolRegistration[];
-  allowTaskHandoff?: boolean;
-  allowTaskStatus?: boolean;
   continueInterrupted?: boolean;
 }
 
@@ -239,15 +234,6 @@ export class MikanAgentSession {
     return { compacted: true, tokensBefore, tokensAfter: await contextTokens(conversation) };
   }
 
-  async steer(text: string): Promise<boolean> {
-    if (!this.runActive || this.runAborted || !this.attached) return false;
-    await this.attached.conversation.submit(
-      { type: "input", content: text, whenBusy: "steer" },
-      context,
-    );
-    return true;
-  }
-
   private async run(text: string, options?: RunOptions): Promise<void> {
     if (this.runActive) throw new Error("Agent is already processing a prompt");
     this.runActive = true;
@@ -284,12 +270,7 @@ export class MikanAgentSession {
         );
       const attached = await this.attach();
       if (this.runAborted) return;
-      const tools = (options?.tools ?? this.options.tools).filter(
-        (tool) =>
-          (tool.name !== START_TASK_TOOL || options?.allowTaskHandoff === true) &&
-          (tool.name !== TASK_STATUS_TOOL || options?.allowTaskStatus === true),
-      );
-      await this.installRunTools(attached, tools);
+      await this.installRunTools(attached, options?.tools ?? this.options.tools);
       if (!(await this.checkCallBudget())) return;
       await this.sessionStore.recordRun({ startedAt: Date.now() });
       watch = await attached.conversation.watch(context);
@@ -529,10 +510,6 @@ export class MikanAgentSession {
             ? this.beforeCompact(String(api.taskId))
             : { decline: true as const },
       }),
-      hook(ToolTask, {
-        beforeTool: async (_call, api) =>
-          own(api.conversationId) ? this.beforeTool(api) : undefined,
-      }),
     ];
   }
 
@@ -549,17 +526,6 @@ export class MikanAgentSession {
   private async beforeRequest(runId: string): Promise<undefined> {
     if (!(await this.checkCallBudget())) return undefined;
     this.requestRunId = runId;
-    return undefined;
-  }
-
-  private async beforeTool(api: {
-    snapshot: ToolExecutionApi["snapshot"];
-    conversationId: ToolExecutionApi["conversationId"];
-  }): Promise<{ block: string } | undefined> {
-    const round = (await api.snapshot(LiveDoc, api.conversationId, context))?.tools ?? [];
-    if (round.length > 1 && round.some((slot) => slot.name === START_TASK_TOOL)) {
-      return { block: `Call ${START_TASK_TOOL} alone, without other tools in the same batch.` };
-    }
     return undefined;
   }
 
