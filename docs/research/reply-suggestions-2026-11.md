@@ -84,6 +84,21 @@ A deployment in use runs on four GPT-family models through its own gateway; no C
 
 So the smallest Claude model's unwanted suggestions weigh little, and the criteria have to be judged on the models actually in use, on messages the wording was not tuned on.
 
+### On the models in use
+
+The last section of the table above (the rule naming more kinds of reply, two positive and two negative examples), through the gateway the deployment uses, thirty runs per cell:
+
+| Model          | Tuning set: wanted | Tuning set: unwanted | Held-out set: wanted | Held-out set: unwanted |
+| -------------- | ------------------ | -------------------- | -------------------- | ---------------------- |
+| `chatgpt`      | 30 of 30           | 0 of 30              | 30 of 30             | 0 of 30                |
+| `gpt-5.6-sol`  | 30 of 30           | 0 of 30              | 29 of 30             | 0 of 30                |
+| `gpt-6-astra`  | 30 of 30           | 0 of 30              | 29 of 30             | 3 of 30                |
+| `gpt-5.6-luna` | 23 of 30           | 0 of 30              | 23 of 30             | 0 of 30                |
+
+No run had more than two lines, a line outside the end of the reply, a thanks or an OK, or a line in the agent's voice. No model offered a guessed answer after asking the person for something: 48 such runs, none. The three unwanted suggestions are all after one message, "git stash 是做什麼的？", where the model explained the command and offered follow-up questions such as "git stash 跟 commit 差在哪？".
+
+Against the criteria: never more than two lines holds. Unwanted suggestions are at most 1 in 20 for every model over both sets (3 of 60 for one, none for the others), though that one model exceeds it on the held-out set alone. Wanted suggestions are on every reply or nearly for three models and on three in four for the fourth, above every figure in the first table. This section is the one to implement.
+
 ## Recommendation
 
 Adopt C, in this shape:
