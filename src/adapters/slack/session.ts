@@ -1,10 +1,10 @@
-import { inferConversationKind, resolveChatSessionKey } from "../../sessions/session-key.js";
+import { resolveChatSessionKey } from "../../sessions/session-key.js";
 import {
   conversationIdOf,
   makeThreadSessionKey,
   threadSuffixOf,
 } from "../../sessions/session-key.js";
-import type { OfficeAddress } from "../../types.js";
+import type { ConversationKind, OfficeAddress } from "../../types.js";
 import type { SlackAdapterSessionPlan, SlackEventAnchorRunPlan, SlackSessionRef } from "./types.js";
 
 interface SlackSessionEventLike {
@@ -30,10 +30,14 @@ export function isSlackThreadSessionKey(sessionKey: string): boolean {
   return parseSlackSessionKey(sessionKey).kind === "thread";
 }
 
+export function slackConversationKind(channelId: string): ConversationKind {
+  return channelId.startsWith("D") ? "direct" : "shared";
+}
+
 export function resolveSlackSessionKey(channelId: string, threadTs?: string): string {
   const sessionKey = resolveChatSessionKey({
     conversationId: channelId,
-    conversationKind: inferConversationKind("slack", channelId),
+    conversationKind: slackConversationKind(channelId),
     messageId: channelId,
     threadTs,
     persistentTopLevel: true,

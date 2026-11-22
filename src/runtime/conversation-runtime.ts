@@ -183,7 +183,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       address,
       sessionKey,
       trustModel: platform.trustModel ?? "membership",
-      platformWorkspaceId: platform.workspaceId,
+      connectorScope: platform.connectorScope,
     });
     try {
       return await lease.state.runner.compact(instructions);
@@ -264,7 +264,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
         sessionKey,
         currentMessageId: event.ts,
         trustModel: context.platform.trustModel ?? "membership",
-        platformWorkspaceId: context.platform.workspaceId,
+        connectorScope: context.platform.connectorScope,
       });
       if (!isContinuedRunId(event.ts)) await lease.state.runner.syncChatHistory(event.ts);
       return lease;
@@ -463,7 +463,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       sessionKey: options.sessionKey,
       office: this.options.workspace.office(options.address),
       trustModel: options.trustModel,
-      platformWorkspaceId: options.platformWorkspaceId,
+      connectorScope: options.connectorScope,
       openConnector: this.options.openConnector,
       eventScheduler: this.options.eventScheduler?.(),
       backgroundJobs: this.options.backgroundJobs,

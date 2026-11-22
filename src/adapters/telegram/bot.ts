@@ -136,6 +136,10 @@ export class TelegramMessagingBot implements MessagingBot {
     });
   }
 
+  conversationKindOf(conversationId: string): ConversationKind {
+    return conversationId.startsWith("-") ? "shared" : "direct";
+  }
+
   enqueueEvent(scheduled: ConversationEvent): boolean {
     if (this.stopped) return false;
     const event = withScheduledEventSession(scheduled);

@@ -55,6 +55,7 @@ const bot: MessagingBot = {
   postMessage: vi.fn().mockResolvedValue("TS"),
   updateMessage: vi.fn().mockResolvedValue(undefined),
   enqueueEvent: vi.fn().mockReturnValue(true),
+  conversationKindOf: () => "shared",
   getMessagingInfo: vi.fn().mockReturnValue(testPlatform),
 };
 

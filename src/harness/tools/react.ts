@@ -7,7 +7,7 @@ export const REACT_TOOL = "react";
 const reactSchema = Type.Object({
   emoji: Type.String({
     description:
-      "Emoji to react with. Use a short name without colons (e.g. eyes, white_check_mark, +1) on Slack, or a Unicode emoji on Discord/Telegram.",
+      "Emoji to react with, in the form this platform takes: a short name without colons (e.g. eyes, white_check_mark, +1) or a Unicode emoji.",
   }),
 });
 

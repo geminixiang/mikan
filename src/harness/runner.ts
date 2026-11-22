@@ -97,7 +97,7 @@ function buildThreadSessionName(message: ThreadRootMessage | null): string | und
 async function ensureDefaultMcpServers(options: {
   office: Office;
   trustModel: CreateRunnerOptions["trustModel"];
-  platformWorkspaceId?: string;
+  connectorScope?: string;
   openConnector?: CreateRunnerOptions["openConnector"];
   signal?: AbortSignal;
 }): Promise<void> {
@@ -105,7 +105,7 @@ async function ensureDefaultMcpServers(options: {
   try {
     await ensureDefaultOpenConnector({
       office: options.office,
-      platformWorkspaceId: options.platformWorkspaceId,
+      connectorScope: options.connectorScope,
       defaultServer: options.openConnector,
       signal: options.signal,
     });
@@ -587,7 +587,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
   await ensureDefaultMcpServers({
     office,
     trustModel,
-    platformWorkspaceId: options.platformWorkspaceId,
+    connectorScope: options.connectorScope,
     openConnector: options.openConnector,
     signal: options.signal,
   });

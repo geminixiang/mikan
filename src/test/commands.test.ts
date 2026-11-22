@@ -55,6 +55,7 @@ function fakeMessagingBot(overrides: Partial<MessagingBot> = {}): MessagingBot {
     postMessage: vi.fn(async () => "ts-1"),
     updateMessage: vi.fn(async () => {}),
     enqueueEvent: vi.fn(() => true),
+    conversationKindOf: () => "shared",
     getMessagingInfo: vi.fn(() => ({
       name: "slack",
       formattingGuide: "",

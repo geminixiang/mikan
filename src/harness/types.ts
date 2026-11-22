@@ -22,7 +22,7 @@ import type { SessionStore } from "../sessions/session-store.js";
 
 export interface EnsureDefaultOpenConnectorOptions {
   office: Office;
-  platformWorkspaceId?: string;
+  connectorScope?: string;
   defaultServer?: McpServerConfig;
   signal?: AbortSignal;
   fetch?: typeof globalThis.fetch;

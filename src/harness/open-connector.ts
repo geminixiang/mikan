@@ -88,28 +88,20 @@ function isDeclared(office: Office): boolean {
   );
 }
 
-function runtimeTokenName(office: Office, platformWorkspaceId?: string): string | undefined {
-  const { platform, conversationId } = office.address;
-  if (platform === "github") return `mikan:github:${conversationId}`;
-  if (platform !== "slack") return undefined;
-  if (platformWorkspaceId) return `mikan:slack:${platformWorkspaceId}:${conversationId}`;
-  log.logWarning(
-    `[${conversationId}] OpenConnector default skipped`,
-    "Slack workspace ID is unavailable",
-  );
-  return undefined;
+function runtimeTokenName(office: Office, connectorScope?: string): string | undefined {
+  return connectorScope ? `mikan:${connectorScope}:${office.address.conversationId}` : undefined;
 }
 
 export async function ensureDefaultOpenConnector({
   office,
-  platformWorkspaceId,
+  connectorScope,
   defaultServer,
   signal,
   fetch: fetchFn = globalThis.fetch,
 }: EnsureDefaultOpenConnectorOptions): Promise<void> {
   const adminToken = readEnv("OPENCONNECTOR_ADMIN_TOKEN");
   if (!defaultServer?.url || !adminToken) return;
-  const name = runtimeTokenName(office, platformWorkspaceId);
+  const name = runtimeTokenName(office, connectorScope);
   if (!name || isDeclared(office)) return;
 
   const inflight = pending.get(office.stateDir);

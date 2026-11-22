@@ -1,4 +1,4 @@
-import type { ConversationLogMessage, RunAnswer } from "../../types.js";
+import type { ConversationKind, ConversationLogMessage, RunAnswer } from "../../types.js";
 import { appendBotResponseLog, appendOfficeLog } from "../../office/log.js";
 import { existsSync } from "node:fs";
 import type {
@@ -174,6 +174,10 @@ export class GithubMessagingBot implements MessagingBot {
     });
   }
 
+  conversationKindOf(): ConversationKind {
+    return "shared";
+  }
+
   enqueueEvent(event: ConversationEvent): boolean {
     if (this.stopped) return false;
     return this.queues.get(event.address.conversationId).offerEvent(event, () => {
@@ -185,6 +189,7 @@ export class GithubMessagingBot implements MessagingBot {
   getMessagingInfo(): MessagingInfo {
     return {
       name: "github",
+      connectorScope: "github",
       trustModel: "membership",
       formattingGuide:
         "## GitHub Formatting (GitHub Flavored Markdown)\n" +

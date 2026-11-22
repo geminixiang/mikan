@@ -23,6 +23,7 @@ function makeMessagingBot(platform: string) {
     postMessage: async () => "1",
     updateMessage: async () => {},
     enqueueEvent,
+    conversationKindOf: () => "shared",
     getMessagingInfo: () => ({ name: platform, formattingGuide: "", channels: [], users: [] }),
   };
   return { bot, enqueueEvent };
@@ -78,8 +79,9 @@ describe("event payload parsing", () => {
 });
 
 describe("EventScheduler", () => {
-  test("infers Discord DM conversation kind from DM-prefixed conversation IDs", async () => {
+  test("asks the platform's adapter whether a conversation without a recorded kind is direct", async () => {
     const { bot, enqueueEvent } = makeMessagingBot("discord");
+    bot.conversationKindOf = (conversationId) => (conversationId === "DM123" ? "direct" : "shared");
     const scheduler = new EventScheduler(workspace(), { discord: bot });
     scheduler.start();
     await new OfficeEventStore(office("discord", "DM123"), scheduler).create("dm.json", {

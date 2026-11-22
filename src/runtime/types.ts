@@ -48,7 +48,7 @@ export interface SessionStateOptions {
   address: OfficeAddress;
   sessionKey: string;
   trustModel: PlatformTrustModel;
-  platformWorkspaceId?: string;
+  connectorScope?: string;
 }
 
 export interface ConversationRuntimeOptions extends Omit<CommandServices, "runtime"> {

@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { ConversationKind, OfficeAddress } from "../types.js";
+import type { OfficeAddress } from "../types.js";
 import type { ResolveSessionKeyOptions } from "./types.js";
 
 const PATH_SEPARATOR_PATTERN = /[\\/]/;
@@ -112,22 +112,6 @@ export function resolveChatSessionKey(options: ResolveSessionKeyOptions): string
     return assertSessionConversationId(conversationId);
   }
   return makeThreadSessionKey(conversationId, threadTs || messageId);
-}
-
-export function inferConversationKind(platform: string, conversationId: string): ConversationKind {
-  if (platform === "slack") {
-    return conversationId.startsWith("D") ? "direct" : "shared";
-  }
-
-  if (platform === "telegram") {
-    return conversationId.startsWith("-") ? "shared" : "direct";
-  }
-
-  if (platform === "discord") {
-    return conversationId.startsWith("DM") ? "direct" : "shared";
-  }
-
-  return "shared";
 }
 
 export function extractSessionSuffix(sessionKey: string): string {

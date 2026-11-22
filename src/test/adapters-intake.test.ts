@@ -45,6 +45,7 @@ function makeBot(): MessagingBot {
     postMessage: vi.fn().mockResolvedValue("TS1"),
     updateMessage: vi.fn(async () => {}),
     enqueueEvent: vi.fn(() => true),
+    conversationKindOf: () => "shared",
     getMessagingInfo: () => ({ name: "slack", formattingGuide: "", channels: [], users: [] }),
   };
 }

@@ -75,7 +75,7 @@ describe("ensureDefaultOpenConnector", () => {
 
     await ensureDefaultOpenConnector({
       office,
-      platformWorkspaceId: "T123",
+      connectorScope: "slack:T123",
       defaultServer,
       fetch: fetchMock,
     });
@@ -110,7 +110,12 @@ describe("ensureDefaultOpenConnector", () => {
     const fetchMock = stubProvisioning();
     const office = workspace().office(createOfficeAddress("github", "GH_acme_widgets_42"));
 
-    await ensureDefaultOpenConnector({ office, defaultServer, fetch: fetchMock });
+    await ensureDefaultOpenConnector({
+      office,
+      connectorScope: "github",
+      defaultServer,
+      fetch: fetchMock,
+    });
 
     const creation = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
     expect(creation.name).toBe("mikan:github:GH_acme_widgets_42");
@@ -135,7 +140,7 @@ describe("ensureDefaultOpenConnector", () => {
 
     await ensureDefaultOpenConnector({
       office,
-      platformWorkspaceId: "T123",
+      connectorScope: "slack:T123",
       defaultServer,
       fetch: fetchMock,
     });
@@ -153,7 +158,7 @@ describe("ensureDefaultOpenConnector", () => {
     );
     await ensureDefaultOpenConnector({
       office: testOffice("C1"),
-      platformWorkspaceId: "T123",
+      connectorScope: "slack:T123",
       defaultServer,
       fetch: fetchMock,
     });
@@ -167,7 +172,7 @@ describe("ensureDefaultOpenConnector", () => {
     writeFileSync(join(stateDir, "settings.json"), JSON.stringify({}));
     await ensureDefaultOpenConnector({
       office: disabled,
-      platformWorkspaceId: "T123",
+      connectorScope: "slack:T123",
       defaultServer,
       fetch: fetchMock,
     });
@@ -178,16 +183,16 @@ describe("ensureDefaultOpenConnector", () => {
     });
   });
 
-  test("does nothing without a default server, admin token, or Slack workspace", async () => {
+  test("does nothing without a default server, admin token, or a scope from the adapter", async () => {
     const fetchMock = stubProvisioning();
     await ensureDefaultOpenConnector({
       office: testOffice(),
-      platformWorkspaceId: "T123",
+      connectorScope: "slack:T123",
       fetch: fetchMock,
     });
     await ensureDefaultOpenConnector({
       office: testOffice(),
-      platformWorkspaceId: "T123",
+      connectorScope: "slack:T123",
       defaultServer,
       fetch: fetchMock,
     });
@@ -195,7 +200,6 @@ describe("ensureDefaultOpenConnector", () => {
     await ensureDefaultOpenConnector({ office: testOffice(), defaultServer, fetch: fetchMock });
     await ensureDefaultOpenConnector({
       office: workspace().office(createOfficeAddress("discord", "C123")),
-      platformWorkspaceId: "T123",
       defaultServer,
       fetch: fetchMock,
     });
@@ -210,20 +214,20 @@ describe("ensureDefaultOpenConnector", () => {
     await Promise.all([
       ensureDefaultOpenConnector({
         office,
-        platformWorkspaceId: "T123",
+        connectorScope: "slack:T123",
         defaultServer,
         fetch: fetchMock,
       }),
       ensureDefaultOpenConnector({
         office,
-        platformWorkspaceId: "T123",
+        connectorScope: "slack:T123",
         defaultServer,
         fetch: fetchMock,
       }),
     ]);
     await ensureDefaultOpenConnector({
       office,
-      platformWorkspaceId: "T123",
+      connectorScope: "slack:T123",
       defaultServer,
       fetch: fetchMock,
     });
@@ -239,7 +243,7 @@ describe("ensureDefaultOpenConnector", () => {
     await expect(
       ensureDefaultOpenConnector({
         office,
-        platformWorkspaceId: "T123",
+        connectorScope: "slack:T123",
         defaultServer,
         fetch: fetchMock,
       }),

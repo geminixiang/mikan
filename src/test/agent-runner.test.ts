@@ -76,7 +76,7 @@ async function createTestRunner(
   options: {
     trustModel?: "membership" | "open-trigger";
     mcpServers?: Record<string, McpServerConfig>;
-    platformWorkspaceId?: string;
+    connectorScope?: string;
     openConnector?: McpServerConfig;
     sessionView?: CreateRunnerOptions["sessionView"];
     platformToolPackFactories?: readonly PlatformToolPackFactory[];
@@ -105,7 +105,7 @@ async function createTestRunner(
     sessionKey,
     office,
     trustModel: options.trustModel ?? "membership",
-    platformWorkspaceId: options.platformWorkspaceId,
+    connectorScope: options.connectorScope,
     openConnector: options.openConnector,
     sessionScope: { threadRootMessage: options.threadRootMessage ?? null },
     chatHistory: new ChatHistorySync({ isCommandText }),
@@ -266,7 +266,7 @@ describe("PiAgentWrapper.run", () => {
     const fetch = vi.spyOn(globalThis, "fetch").mockRejectedValue(new Error("must not fetch"));
     const { runner } = await createTestRunner({
       trustModel: "open-trigger",
-      platformWorkspaceId: "T1",
+      connectorScope: "slack:T1",
       openConnector: { url: "http://127.0.0.1:3737/mcp" },
     });
 

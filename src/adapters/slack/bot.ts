@@ -67,6 +67,7 @@ import {
   planSlackAdapterSession,
   planSlackEventAnchorRun,
   resolveSlackSessionKey,
+  slackConversationKind,
 } from "./session.js";
 import { reportUserFacingError } from "../../observability/index.js";
 import { recordSlackUpdate } from "./update-diagnostics.js";
@@ -648,11 +649,11 @@ export class SlackMessagingBot implements MessagingBot {
   getMessagingInfo(): MessagingInfo {
     return {
       name: "slack",
-      workspaceId: this.teamId || undefined,
+      connectorScope: this.teamId ? `slack:${this.teamId}` : undefined,
       trustModel: "membership",
       continuesInterruptedRuns: true,
       formattingGuide:
-        "## Slack Formatting\nWrite standard Markdown/GFM: **bold**, _italic_, ~~strike~~, `code`, fenced code blocks, [links](url), lists, and pipe tables (rendered as native Slack tables).\nDo NOT use Slack mrkdwn syntax like *single-asterisk bold* or <url|label> links.",
+        '## Slack Formatting\nWrite standard Markdown/GFM: **bold**, _italic_, ~~strike~~, `code`, fenced code blocks, [links](url), lists, and pipe tables (rendered as native Slack tables).\nDo NOT use Slack mrkdwn syntax like *single-asterisk bold* or <url|label> links.\n## Slack Rendering\n- The Slack adapter renders responses natively from standard Markdown. Answer in normal Markdown/GFM.\n- Markdown pipe tables are rendered as native Slack tables.\n- For interactive elements (buttons, select menus), use the slack_blockkit tool; user interactions arrive as "[Slack action] <action_id>: <value>" messages.\n',
       channels: this.getAllChannels().map((c) => ({ id: c.id, name: c.name })),
       users: this.getAllUsers().map((u) => ({
         id: u.id,
@@ -663,6 +664,10 @@ export class SlackMessagingBot implements MessagingBot {
         showUsageSummary: true,
       },
     };
+  }
+
+  conversationKindOf(conversationId: string): ConversationKind {
+    return slackConversationKind(conversationId);
   }
 
   enqueueEvent(event: ConversationEvent): boolean {

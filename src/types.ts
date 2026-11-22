@@ -67,7 +67,7 @@ export interface ConversationResponder {
 
 export interface MessagingInfo {
   name: string;
-  workspaceId?: string;
+  connectorScope?: string;
   formattingGuide: string;
   channels: { id: string; name: string }[];
   users: { id: string; userName: string; displayName: string }[];
@@ -105,6 +105,7 @@ export interface MessagingBot {
     extra?: { answer?: RunAnswer },
   ): void;
   enqueueEvent(event: ConversationEvent): boolean;
+  conversationKindOf(conversationId: string): ConversationKind;
   getMessagingInfo(): MessagingInfo;
   postPrivate?(conversationId: string, userId: string, text: string): Promise<void>;
   postPrivateDiagnostic?(
@@ -336,7 +337,7 @@ export interface CreateRunnerOptions {
   sessionKey: string;
   office: Office;
   trustModel: PlatformTrustModel;
-  platformWorkspaceId?: string;
+  connectorScope?: string;
   openConnector?: McpServerConfig;
   eventScheduler?: EventScheduleSink;
   backgroundJobs?: BackgroundJobSink;

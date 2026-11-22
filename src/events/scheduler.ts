@@ -6,7 +6,6 @@ import * as log from "../log.js";
 import { createConversationEvent, listRegisteredOffices, officeKey } from "../office/index.js";
 import type { Workspace } from "../office/types.js";
 import { reportUserFacingError } from "../observability/index.js";
-import { inferConversationKind } from "../sessions/session-key.js";
 import type { OfficeAddress } from "../types.js";
 import {
   eventRunId,
@@ -167,7 +166,7 @@ export class EventScheduler implements EventScheduleSink {
     const bot = this.botsByPlatform[platform];
     if (!bot) throw new Error(`no bot configured for platform '${platform}'`);
     const conversationKind: ConversationKind =
-      payload.conversationKind ?? inferConversationKind(platform, payload.conversationId);
+      payload.conversationKind ?? bot.conversationKindOf(payload.conversationId);
     return { event: { ...payload, platform, conversationKind }, bot };
   }
 

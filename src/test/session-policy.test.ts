@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { inferConversationKind, resolveChatSessionKey } from "../sessions/session-key.js";
+import { resolveChatSessionKey } from "../sessions/session-key.js";
 
 describe("resolveChatSessionKey", () => {
   test("direct top-level conversations use one persistent session", () => {
@@ -85,26 +85,5 @@ describe("resolveChatSessionKey", () => {
         threadTs: "M1",
       }),
     ).toBe("C1:M1");
-  });
-});
-
-describe("inferConversationKind", () => {
-  test("infers Slack direct conversations from D-prefixed IDs", () => {
-    expect(inferConversationKind("slack", "D123")).toBe("direct");
-    expect(inferConversationKind("slack", "C123")).toBe("shared");
-  });
-
-  test("infers Telegram shared conversations from negative chat IDs", () => {
-    expect(inferConversationKind("telegram", "-100123")).toBe("shared");
-    expect(inferConversationKind("telegram", "123")).toBe("direct");
-  });
-
-  test("infers Discord direct conversations from synthetic DM IDs", () => {
-    expect(inferConversationKind("discord", "DM123")).toBe("direct");
-    expect(inferConversationKind("discord", "123")).toBe("shared");
-  });
-
-  test("GitHub conversations are always shared", () => {
-    expect(inferConversationKind("github", "GH_owner_repo_42")).toBe("shared");
   });
 });

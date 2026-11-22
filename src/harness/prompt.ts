@@ -130,7 +130,7 @@ export async function buildPromptPayload(
   );
 
   if (nonImagePaths.length > 0) {
-    userMessage += `\n\n<slack_attachments>\n${nonImagePaths.join("\n")}\n</slack_attachments>`;
+    userMessage += `\n\n<attachments>\n${nonImagePaths.join("\n")}\n</attachments>`;
   }
 
   return { userMessage, imageAttachments };
@@ -197,15 +197,6 @@ function buildContextPrompt(input: BuildSystemPromptOptions, paths: RuntimePromp
     "(no users loaded)",
   );
   const envDescription = buildEnvDescription(workspaceRoot, conversationPath);
-  const slackBlockKitInstructions =
-    platform.name === "slack"
-      ? `
-## Slack Rendering
-- The Slack adapter renders responses natively from standard Markdown. Answer in normal Markdown/GFM.
-- Markdown pipe tables are rendered as native Slack tables.
-- For interactive elements (buttons, select menus), use the slack_blockkit tool; user interactions arrive as "[Slack action] <action_id>: <value>" messages.
-`
-      : "";
 
   return `You are mikan, a ${platform.name} bot assistant. Be concise. No emojis.
 
@@ -214,7 +205,7 @@ function buildContextPrompt(input: BuildSystemPromptOptions, paths: RuntimePromp
 - Messages in your context are reliable: answer from them directly, including anything the user asked you to remember in this conversation.
 - Your context does not hold tool output from other sessions: a thread or a session started by \`/new\` sees earlier work only as chat text. When the user asks for a result your context lacks, such as a command's output, call the \`history\` tool instead of guessing or rerunning the command.
 - User messages include a \`[in-thread:TS]\` marker when sent from within a platform thread/reply (TS is the thread or parent message identifier). Without this marker, the message is a top-level conversation message.
-${platform.formattingGuide}${slackBlockKitInstructions}
+${platform.formattingGuide}
 
 ## Platform IDs
 Channels: ${channelMappings}

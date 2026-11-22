@@ -52,6 +52,7 @@ function world(options: { limitMs?: number } = {}) {
     postMessage: async () => "1",
     updateMessage: async () => {},
     enqueueEvent,
+    conversationKindOf: () => "shared",
     getMessagingInfo: () => ({ name: "slack", formattingGuide: "", channels: [], users: [] }),
   };
   const released: string[] = [];

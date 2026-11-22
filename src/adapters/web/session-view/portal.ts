@@ -35,7 +35,6 @@ import {
 } from "../portal-shell.js";
 import { PRODUCT_NAME } from "../../messages.js";
 import { reportUserFacingError } from "../../../observability/index.js";
-import { inferConversationKind } from "../../../sessions/session-key.js";
 import { isThreadSessionKey, threadSuffixOf } from "../../../sessions/session-key.js";
 
 const SESSION_VIEW_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
@@ -614,7 +613,7 @@ async function dispatchSessionViewMessage(input: SessionViewMessageDispatch): Pr
   }
 
   const streamKey = sessionStreamKey({ ...entry, sessionKey: activeSessionKey });
-  const conversationKind = inferConversationKind(entry.platform, entry.conversationId);
+  const conversationKind = bot.conversationKindOf(entry.conversationId);
   const ts = (Date.now() / 1000).toFixed(6);
   const platformInfo = bot.getMessagingInfo();
   const platformUserName =

@@ -46,6 +46,7 @@ function bot(): { bot: MessagingBot; enqueueEvent: ReturnType<typeof vi.fn> } {
       postMessage: async () => "1",
       updateMessage: async () => {},
       enqueueEvent,
+      conversationKindOf: () => "shared",
       getMessagingInfo: () => ({ name: "slack", formattingGuide: "", channels: [], users: [] }),
     },
   };

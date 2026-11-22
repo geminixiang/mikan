@@ -33,6 +33,7 @@ function fakeBot(overrides: Partial<MessagingBot> = {}): MessagingBot {
     postMessage: vi.fn(async () => "ts-1"),
     updateMessage: vi.fn(async () => {}),
     enqueueEvent: vi.fn(() => true),
+    conversationKindOf: () => "shared",
     getMessagingInfo: () => ({ name: "slack", formattingGuide: "", channels: [], users: [] }),
     ...overrides,
   };

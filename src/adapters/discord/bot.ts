@@ -1,4 +1,4 @@
-import type { ConversationLogMessage, RunAnswer } from "../../types.js";
+import type { ConversationKind, ConversationLogMessage, RunAnswer } from "../../types.js";
 import { appendBotResponseLog, appendOfficeLog } from "../../office/log.js";
 import {
   ApplicationCommandOptionType,
@@ -173,6 +173,10 @@ export class DiscordMessagingBot implements MessagingBot {
       const msg = await ch.messages.fetch(messageTs);
       await msg.react(shortNameToUnicodeEmoji(emoji));
     });
+  }
+
+  conversationKindOf(conversationId: string): ConversationKind {
+    return conversationId.startsWith("DM") ? "direct" : "shared";
   }
 
   enqueueEvent(scheduled: ConversationEvent): boolean {

@@ -255,3 +255,24 @@ describe("platform stop intake", () => {
     expect(stop).toHaveBeenCalledOnce();
   });
 });
+
+describe("each adapter tells direct conversations from shared ones by its own IDs", () => {
+  test("Slack: a D-prefixed conversation is direct", () => {
+    expect(slackBot().conversationKindOf("D123")).toBe("direct");
+    expect(slackBot().conversationKindOf("C123")).toBe("shared");
+  });
+
+  test("Telegram: a negative chat ID is shared", () => {
+    expect(telegramBot().conversationKindOf("-100123")).toBe("shared");
+    expect(telegramBot().conversationKindOf("123")).toBe("direct");
+  });
+
+  test("Discord: a synthetic DM ID is direct", () => {
+    expect(discordBot().conversationKindOf("DM123")).toBe("direct");
+    expect(discordBot().conversationKindOf("123")).toBe("shared");
+  });
+
+  test("GitHub: every conversation is shared", () => {
+    expect(githubBot().conversationKindOf()).toBe("shared");
+  });
+});

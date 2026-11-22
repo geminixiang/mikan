@@ -50,7 +50,7 @@ describe("buildPromptPayload", () => {
         data: Buffer.from("png-bytes").toString("base64"),
       },
     ]);
-    expect(payload.userMessage).not.toContain("<slack_attachments>");
+    expect(payload.userMessage).not.toContain("<attachments>");
   });
 
   test("keeps runtime paths in text for non-image attachments", async () => {
@@ -72,7 +72,7 @@ describe("buildPromptPayload", () => {
 
     const payload = await buildPromptPayload(makeMessage(localPath), "/workspace");
 
-    expect(payload.userMessage).toContain("<slack_attachments>\nattachments/notes.txt\n");
+    expect(payload.userMessage).toContain("<attachments>\nattachments/notes.txt\n");
     expect(payload.userMessage).not.toContain("/workspace/");
   });
 });

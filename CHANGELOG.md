@@ -31,6 +31,8 @@ change in a minor release.
   `bash` runs there and a relative path in `read`, `write`, `edit`, and `attach` resolves there.
   The model is given an attachment as `attachments/<file>`. It used to copy the full path with the
   office key and sometimes mistyped it. Absolute paths work as before.
+- Attachments are listed to the model in `<attachments>` on every platform; the tag used to be
+  `<slack_attachments>`.
 - `mikan` with no `--sandbox` flag now runs `--sandbox=oci`, mikan's published sandbox image, and
   needs nerdctl, Podman, or Docker. It used to run the agent directly on the machine.
 - `mikan migrate` no longer needs `--sandbox`; the flag is accepted and ignored.
