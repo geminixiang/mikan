@@ -673,12 +673,9 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
 
   const projection = resolveWorkspaceProjection(office);
   warnUnenforcedPrivateOffice(sandboxConfig, projection.visibility, office.key);
-  const execution = createRunnerExecutionContext(
-    sandboxConfig,
-    vaultManager,
-    provisioner,
-    office.workspace,
-  );
+  const execution =
+    options.execution ??
+    createRunnerExecutionContext(sandboxConfig, vaultManager, provisioner, office.workspace);
   const toolContext: MikanToolContext = { env: execution.env };
 
   const modelRegistry = options.models;

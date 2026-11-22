@@ -17,6 +17,7 @@ import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { createConversationRuntime } from "../runtime/conversation-runtime.js";
 import type { SandboxConfig } from "../sandbox/types.js";
 import { runtimeServices } from "./runtime-services.js";
+import { localRunnerFactory } from "./local-execution.js";
 
 const BUSY_TEXT = "busy-queue e2e: run `sleep 10`, then reply with this token: QA_BUSY_TOKEN";
 const QUEUED_TEXT = "queue test: reply with this token directly: QA_QUEUED_TOKEN";
@@ -152,6 +153,7 @@ describe("queued message provider context", () => {
       sandbox,
       models,
       ...runtimeServices(workspace.stateDir),
+      runnerFactory: localRunnerFactory,
     });
 
     const captured: Context[] = [];

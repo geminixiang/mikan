@@ -33,6 +33,7 @@ import { SessionStore } from "../sessions/session-store.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { ChatHistorySync } from "../sessions/chat-history-sync.js";
+import { localExecution } from "./local-execution.js";
 
 let dir: string;
 
@@ -72,6 +73,7 @@ function createOptions() {
   (models.models as MutableModels).setProvider(fauxProvider().provider);
   return {
     sandboxConfig: { type: "host" } as const,
+    execution: localExecution(office.workspace),
     sessionKey: "C1",
     office,
     trustModel: "membership" as const,

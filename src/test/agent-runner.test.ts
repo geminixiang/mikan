@@ -31,6 +31,7 @@ import type { PlatformToolPackFactory } from "../harness/tools/types.js";
 import type { CreateRunnerOptions } from "../types.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 import type { Office } from "../office/types.js";
+import { localExecution } from "./local-execution.js";
 
 let dir: string;
 
@@ -100,6 +101,7 @@ async function createTestRunner(
 
   const runner = await createRunner({
     sandboxConfig: { type: "host" },
+    execution: localExecution(office.workspace),
     sessionKey,
     office,
     trustModel: options.trustModel ?? "membership",

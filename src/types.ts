@@ -1,5 +1,5 @@
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
-import type { RunEventPublisher } from "./harness/types.js";
+import type { RunEventPublisher, RunnerExecutionContext } from "./harness/types.js";
 import type { MikanModels } from "./harness/models.js";
 import type { McpServerConfig } from "./harness/types.js";
 import type { EventScheduleSink } from "./events/index.js";
@@ -371,6 +371,7 @@ export interface CreateRunnerOptions {
   vaultManager?: VaultManager;
   provisioner?: DockerContainerManager;
   resourceController?: SandboxResourceController;
+  execution?: RunnerExecutionContext;
   sessionView?: {
     tokenStore: SessionViewTokenStoreLike;
     portalBaseUrl?: string;

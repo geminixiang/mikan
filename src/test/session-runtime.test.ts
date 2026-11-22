@@ -27,6 +27,7 @@ import type { SandboxConfig } from "../sandbox/types.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { continuedRunId } from "../harness/continued-run.js";
 import { runtimeServices } from "./runtime-services.js";
+import { localRunnerFactory } from "./local-execution.js";
 
 const testAddress = createOfficeAddress("slack", "C123");
 
@@ -64,7 +65,7 @@ function makeRuntime(options: MakeRuntimeOptions = {}) {
     workspace,
     sandbox,
     ...runtimeServices(stateDir),
-    runnerFactory: options.runnerFactory,
+    runnerFactory: options.runnerFactory ?? localRunnerFactory,
     models: options.models ?? MikanModels.create({ modelsJsonPath: join(stateDir, "models.json") }),
   });
 }
