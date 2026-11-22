@@ -7,7 +7,6 @@ File-backed credential vault for env secrets, secret files, shared profiles, and
 ## Contracts
 
 - `resolveVaultInjection` fails closed when a sandbox backend cannot mount vault files.
-- `disabledVaultManager` serves a runtime constructed without a vault, which only tests do since the package interface was removed: reads report empty or disabled, and writes throw.
 
 ## Vault keys
 

@@ -57,7 +57,7 @@ export interface LinkTokenStoreLike {
   ): { token: string };
 }
 
-export interface AdminTokenStoreLike {
+interface AdminTokenStoreLike {
   create(options: AdminTokenCreateOptions): { token: string };
 }
 

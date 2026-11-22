@@ -10,16 +10,9 @@ import type {
   OfficeAddress,
   RunnerCacheControl,
 } from "../types.js";
-import type {
-  AdminTokenStoreLike,
-  CommandHandler,
-  CommandServices,
-  LinkTokenStoreLike,
-} from "../adapters/commands/types.js";
-import type { SessionViewTokenStoreLike } from "../types.js";
+import type { CommandServices } from "../adapters/commands/types.js";
 import type { MikanModels } from "../harness/models.js";
 import type { PlatformToolPackFactory } from "../harness/tools/types.js";
-import type { VaultManager } from "../vault/types.js";
 
 export type RunnerFactory = (options: CreateRunnerOptions) => Promise<PiAgentWrapper>;
 
@@ -57,16 +50,8 @@ export interface SessionStateOptions {
   platformWorkspaceId?: string;
 }
 
-export interface ConversationRuntimeOptions extends Omit<
-  CommandServices,
-  "runtime" | "vaultManager" | "linkTokenStore" | "sessionViewTokenStore" | "adminTokenStore"
-> {
-  vaultManager?: VaultManager;
-  linkTokenStore?: LinkTokenStoreLike;
-  sessionViewTokenStore?: SessionViewTokenStoreLike;
-  adminTokenStore?: AdminTokenStoreLike;
-  commandHandlers?: readonly CommandHandler[];
-  models?: MikanModels;
+export interface ConversationRuntimeOptions extends Omit<CommandServices, "runtime"> {
+  models: MikanModels;
   openConnector?: McpServerConfig;
   eventScheduler?: () => EventScheduleSink | undefined;
   platformToolPackFactories?: readonly PlatformToolPackFactory[];

@@ -479,21 +479,3 @@ export function resolveVaultInjection(options: {
     capabilities.env && vault && Object.keys(vault.env).length > 0 ? vault.env : undefined;
   return { env, mounts };
 }
-
-export const disabledVaultManager: VaultManager = {
-  isEnabled: () => false,
-  hasEntry: () => false,
-  resolve: () => undefined,
-  listSharedVaults: () => [],
-  deleteSharedVault: () => false,
-  copySharedVaultTo: () => ({ filesCopied: 0, envKeysCopied: 0 }),
-  upsertEnv: () => {
-    throw new Error("Vault not configured");
-  },
-  deleteEnvKey: () => {
-    throw new Error("Vault not configured");
-  },
-  upsertFile: () => {
-    throw new Error("Vault not configured");
-  },
-};

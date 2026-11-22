@@ -13,7 +13,6 @@ import type {
 import type { Office } from "../office/types.js";
 import { createRunner } from "../harness/runner.js";
 import type { PiAgentWrapper } from "../types.js";
-import { defaultModelsJsonPath, MikanModels } from "../harness/models.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { defaultCommandHandlers, dispatchCommand } from "../adapters/commands/registry.js";
 import type { CommandHandler, CommandServices } from "../adapters/commands/types.js";
@@ -40,7 +39,6 @@ import {
   formatStopped,
   formatStopping,
 } from "../adapters/messages.js";
-import { disabledVaultManager } from "../vault/index.js";
 import type { ConversationRuntimeState } from "./types.js";
 import { SessionLifecycle } from "./session-lifecycle.js";
 
@@ -59,14 +57,6 @@ import { isTaskRunId } from "../harness/tools/task.js";
 import { isContinuedRunId } from "../harness/continued-run.js";
 
 type RunResult = Awaited<ReturnType<PiAgentWrapper["run"]>>;
-
-function portalNotConfiguredTokenStore(portal: string): { create: () => never } {
-  return {
-    create: () => {
-      throw new Error(`${portal} portal not configured`);
-    },
-  };
-}
 
 function requestStop(state: ConversationRuntimeState): void {
   state.stopRequested = true;
@@ -108,23 +98,11 @@ class ConversationRuntimeImpl implements ConversationRuntime {
   private readonly chatSessionManager = new ChatHistorySync({ isCommandText });
   private readonly commandServices: CommandServices;
   private readonly commandHandlers: readonly CommandHandler[];
-  private readonly resolvedModels: MikanModels;
   private isShuttingDown = false;
 
   constructor(private readonly options: ConversationRuntimeOptions) {
-    this.resolvedModels =
-      options.models ??
-      MikanModels.create({ modelsJsonPath: defaultModelsJsonPath(options.workspace.stateDir) });
-    this.commandServices = {
-      ...options,
-      vaultManager: options.vaultManager ?? disabledVaultManager,
-      linkTokenStore: options.linkTokenStore ?? portalNotConfiguredTokenStore("Login"),
-      sessionViewTokenStore:
-        options.sessionViewTokenStore ?? portalNotConfiguredTokenStore("Session viewer"),
-      adminTokenStore: options.adminTokenStore ?? portalNotConfiguredTokenStore("Admin"),
-      runtime: this,
-    };
-    this.commandHandlers = options.commandHandlers ?? defaultCommandHandlers(this.resolvedModels);
+    this.commandServices = { ...options, runtime: this };
+    this.commandHandlers = defaultCommandHandlers(options.models);
   }
 
   isRunning(address: OfficeAddress, sessionKey: string): boolean {
@@ -532,7 +510,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
           }
         : undefined,
       platformToolPackFactories: this.options.platformToolPackFactories,
-      models: this.resolvedModels,
+      models: this.options.models,
       runEvents: this.options.runEvents,
     });
   }

@@ -34,6 +34,7 @@ import type {
   SlackSocketEventArgs,
   SlackWebApi,
 } from "../adapters/slack/types.js";
+import { runtimeServices } from "./runtime-services.js";
 
 const jev = vi.fn();
 vi.mock("../harness/jev.js", async (importOriginal) => {
@@ -172,6 +173,7 @@ beforeEach(async () => {
     workspace,
     sandbox: { type: "host" },
     models,
+    ...runtimeServices(workspace.stateDir),
     platformToolPackFactories: [() => ({ tools: [tool], bindRun: () => {} })],
   });
   socket = new FakeSlackSocket();

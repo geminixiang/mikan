@@ -26,6 +26,7 @@ import type { PiAgentWrapper } from "../types.js";
 import type { SandboxConfig } from "../sandbox/types.js";
 import { isCommandText } from "../adapters/commands/manifest.js";
 import { continuedRunId } from "../harness/continued-run.js";
+import { runtimeServices } from "./runtime-services.js";
 
 const testAddress = createOfficeAddress("slack", "C123");
 
@@ -57,8 +58,15 @@ interface MakeRuntimeOptions {
 
 function makeRuntime(options: MakeRuntimeOptions = {}) {
   const sandbox: SandboxConfig = { type: "host" };
-  const workspace = createWorkspace({ root: workingDir, stateDir: join(workingDir, "state") });
-  return createConversationRuntime({ workspace, sandbox, ...options });
+  const stateDir = join(workingDir, "state");
+  const workspace = createWorkspace({ root: workingDir, stateDir });
+  return createConversationRuntime({
+    workspace,
+    sandbox,
+    ...runtimeServices(stateDir),
+    runnerFactory: options.runnerFactory,
+    models: options.models ?? MikanModels.create({ modelsJsonPath: join(stateDir, "models.json") }),
+  });
 }
 
 function fakeRunnerFactory(runner: PiAgentWrapper) {
