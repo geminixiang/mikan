@@ -172,6 +172,10 @@ export class DockerContainerManager {
     };
   }
 
+  exec(containerKey: string, command: string[]): Promise<{ stdout: string }> {
+    return this.run(["exec", DockerContainerManager.containerName(containerKey), ...command]);
+  }
+
   stop(containerKey: string): Promise<void> {
     return this.serialize(containerKey, () => this.stopInner(containerKey));
   }

@@ -1,4 +1,5 @@
 import { isEventRunId } from "../../events/index.js";
+import { isJobRunId } from "../../events/jobs.js";
 import type { ConversationContext } from "../../types.js";
 import { createProgressiveRenderer } from "../progressive-renderer.js";
 import { createEventMessage, persistentTopLevelSessionKey } from "../shared.js";
@@ -11,7 +12,7 @@ const MAX_LENGTH = DISCORD_V2_TEXT_LIMIT - 100;
 const formatDiscordContinuation = (partNum: number): string => `*(continued ${partNum})*`;
 
 function isDiscordMessageReference(id: string | undefined): id is string {
-  return typeof id === "string" && id !== "" && !isEventRunId(id);
+  return typeof id === "string" && id !== "" && !isEventRunId(id) && !isJobRunId(id);
 }
 
 export function createDiscordAdapters(

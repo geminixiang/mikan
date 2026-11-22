@@ -619,6 +619,7 @@ export async function createRunner(options: CreateRunnerOptions): Promise<PiAgen
       getApiKey: () => modelRegistry.getApiKeyForProvider(model.provider),
       outputDir: office.dir,
     },
+    options.backgroundJobs ? { sink: options.backgroundJobs, office } : undefined,
   );
 
   const { threadRootMessage } = sessionScope;

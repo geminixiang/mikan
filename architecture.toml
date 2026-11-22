@@ -249,7 +249,7 @@ docs = "src/adapters/commands/README.md"
 id = "event-protocol"
 owner = "events"
 consumers = ["harness", "web-adapter"]
-interface = "EventStore, OfficeEventStore, EventScheduler, buildEventPayload, parseEventPayload"
+interface = "EventStore, OfficeEventStore, EventScheduler, buildEventPayload, parseEventPayload, BackgroundJobs, BackgroundJobSink"
 docs = "src/events/README.md"
 
 # Resources record global ownership and security classification. Paths are
@@ -345,6 +345,13 @@ authority = "events"
 scope = "conversation"
 classification = "host-only-scheduling"
 docs = "ARCHITECTURE.md#scheduled-execution"
+
+[[resources]]
+id = "job-records"
+authority = "events"
+scope = "conversation"
+classification = "host-authoritative"
+docs = "ARCHITECTURE.md#background-jobs"
 
 [[flows]]
 id = "boot"

@@ -7,6 +7,7 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
+  readSync,
   readdirSync,
   renameSync,
   unlinkSync,
@@ -59,6 +60,28 @@ export function readTextFileNoFollowIfExists(path: string): string | undefined {
   }
   try {
     return readFileSync(fd, "utf-8");
+  } finally {
+    closeSync(fd);
+  }
+}
+
+export function readSmallTextFileNoFollowIfExists(
+  path: string,
+  maxBytes: number,
+): { text: string; mtimeMs: number } | undefined {
+  let fd: number;
+  try {
+    fd = openRegularFileNoFollow(path, fsConstants.O_RDONLY);
+  } catch (err) {
+    if (err instanceof Error && "code" in err && err.code === "ENOENT") return undefined;
+    throw err;
+  }
+  try {
+    const { size, mtimeMs } = fstatSync(fd);
+    if (size > maxBytes) throw new Error(`Expected at most ${maxBytes} bytes: ${path}`);
+    const buffer = Buffer.alloc(maxBytes);
+    const read = readSync(fd, buffer, 0, maxBytes, 0);
+    return { text: buffer.subarray(0, read).toString("utf-8"), mtimeMs };
   } finally {
     closeSync(fd);
   }

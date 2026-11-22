@@ -1,3 +1,4 @@
+import { isJobRunId } from "../../events/jobs.js";
 import type { ConversationMessage, ConversationResponder } from "../../types.js";
 import * as log from "../../log.js";
 import { createProgressiveRenderer } from "../progressive-renderer.js";
@@ -310,7 +311,9 @@ export function createSlackResponseContext({
     uploadFile: (filePath, title) =>
       slack.uploadFile(event.channel, filePath, title, replyInThread ? rootTs : undefined),
     react: async (emoji) => {
-      if (!eventFilename) await slack.addReaction(event.channel, event.ts, emoji);
+      if (!eventFilename && !isJobRunId(event.ts)) {
+        await slack.addReaction(event.channel, event.ts, emoji);
+      }
     },
   });
 

@@ -714,6 +714,19 @@ describe("DockerContainerManager", () => {
     expect(engine.callsOf("stop")).toEqual([["stop", "mikan-sandbox-slack-u111"]]);
   });
 
+  test("exec runs a command in the office's container without provisioning it", async () => {
+    const engine = new FakeEngine();
+    const sandbox = manager(engine);
+
+    await sandbox.exec("slack-u111", ["sh", "-c", "true"]).catch(() => undefined);
+
+    expect(engine.callsOf("exec")).toEqual([
+      ["exec", "mikan-sandbox-slack-u111", "sh", "-c", "true"],
+    ]);
+    expect(engine.callsOf("run")).toEqual([]);
+    expect(engine.callsOf("start")).toEqual([]);
+  });
+
   test("stopIdle keeps a container while a viewer retains it, and counts the release as use", async () => {
     const engine = new FakeEngine();
     const sandbox = manager(engine);

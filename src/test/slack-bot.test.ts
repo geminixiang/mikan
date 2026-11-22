@@ -15,7 +15,7 @@ vi.mock("../harness/jev.js", async () => {
   const actual = await vi.importActual<typeof import("../harness/jev.js")>("../harness/jev.js");
   return { ...actual, evaluateWithJev: (...args: unknown[]) => evaluateWithJevMock(...args) };
 });
-import type { MessagingEventHandler } from "../types.js";
+import type { ConversationContext, MessagingEventHandler } from "../types.js";
 import { createOfficeAddress, createWorkspace, officeKey } from "../office/index.js";
 import type { Workspace } from "../office/types.js";
 
@@ -1166,6 +1166,108 @@ describe("SlackMessagingBot queues follow-up messages", () => {
         "C123:2000.0001",
       ),
     ).toBe(true);
+  });
+
+  test.each([
+    { name: "a DM's top level", sessionKey: "D123", thread: undefined, named: undefined },
+    { name: "a thread", sessionKey: "C123:1000.0001", thread: "1000.0001", named: "1000.0001" },
+    {
+      name: "a thread its session key alone names",
+      sessionKey: "C123:2000.0001",
+      thread: "2000.0001",
+      named: undefined,
+    },
+  ])("an event that names a session runs in $name without an anchor", async (target) => {
+    const handler = makeHandler();
+    const handled = deferred<ConversationContext>();
+    handler.handleEvent = vi.fn(async (_event, _bot, context) => {
+      await context.responder.respond("job answer");
+      handled.resolve(context);
+    });
+    const { bot } = createSlackHarness({ handler, workspace });
+    const postMessage = vi.spyOn(bot, "postMessage").mockResolvedValue("3000.0001");
+    const postInThread = vi.spyOn(bot, "postInThread").mockResolvedValue("3000.0002");
+    vi.spyOn(bot, "updateMessage").mockResolvedValue(undefined);
+    vi.spyOn(bot, "tryReserveStreamStart").mockReturnValue(false);
+    const conversationId = target.sessionKey.split(":")[0]!;
+
+    expect(
+      bot.enqueueEvent({
+        type: "dm",
+        address: createOfficeAddress("slack", conversationId),
+        conversationKind: "direct",
+        ts: "job:a1b2c3d4",
+        thread_ts: target.named,
+        sessionKey: target.sessionKey,
+        user: "U123",
+        text: "[job a1b2c3d4 exited 0 after 3s] make",
+      }),
+    ).toBe(true);
+
+    const context = await handled.promise;
+    expect(context.message).toMatchObject({
+      id: "job:a1b2c3d4",
+      sessionKey: target.sessionKey,
+      threadTs: target.thread,
+      userId: "U123",
+    });
+    expect(handler.handleEvent).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({ sessionKey: target.sessionKey, ts: "job:a1b2c3d4" }),
+      bot,
+      context,
+    );
+    const answers = target.thread ? postInThread : postMessage;
+    const elsewhere = target.thread ? postMessage : postInThread;
+    expect(answers.mock.calls.map((call) => call.slice(0, target.thread ? 2 : 1))).toEqual([
+      target.thread ? [conversationId, target.thread] : [conversationId],
+    ]);
+    expect(answers.mock.calls[0]!.at(target.thread ? 2 : 1)).toContain("job answer");
+    expect(elsewhere).not.toHaveBeenCalled();
+  });
+
+  test("an event that names a session waits for that session's running turn", async () => {
+    const handler = makeHandler();
+    const firstStarted = deferred();
+    const release = deferred();
+    handler.handleEvent = vi.fn(async (event) => {
+      if (event.ts === "job:a1b2c3d4") return;
+      firstStarted.resolve();
+      await release.promise;
+    });
+    const { bot, socket } = await startSlackHarness({ handler, workspace });
+
+    await socket.deliver("message", {
+      event: {
+        text: "long work",
+        channel: "D123",
+        user: "U123",
+        ts: "1000.0001",
+        channel_type: "im",
+      },
+      ack: makeAck(),
+    });
+    await firstStarted.promise;
+    expect(
+      bot.enqueueEvent({
+        type: "dm",
+        address: createOfficeAddress("slack", "D123"),
+        conversationKind: "direct",
+        ts: "job:a1b2c3d4",
+        sessionKey: "D123",
+        user: "U123",
+        text: "[job a1b2c3d4 exited 0 after 3s] make",
+      }),
+    ).toBe(true);
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(handler.handleEvent).toHaveBeenCalledTimes(1);
+
+    release.resolve();
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(2));
+    expect(vi.mocked(handler.handleEvent).mock.calls[1]![0]).toMatchObject({
+      ts: "job:a1b2c3d4",
+      sessionKey: "D123",
+    });
+    await bot.stop();
   });
 
   test("postInThread wraps text in a markdown block", async () => {

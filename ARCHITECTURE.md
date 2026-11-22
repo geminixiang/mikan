@@ -86,16 +86,16 @@ The Open network is not an authority boundary. A Sandbox runtime may reach the n
 
 The complete machine-readable inventory is in `architecture.toml`. The main groups are:
 
-| Group                   | Modules                                               | Detailed documentation                                                                                                                                     |
-| ----------------------- | ----------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Platform edge           | Platform adapters, Conversation intake                | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                         |
-| Orchestration           | Composition root, Conversation runtime                | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`                                                                                            |
-| Agent core              | Harness and generic agent tools                       | [`src/harness/README.md`](src/harness/README.md)                                                                                                           |
-| Identity and data       | Office, Sessions, Configuration, State migrations     | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/migrations/README.md`](src/migrations/README.md) |
-| Execution and authority | Harness execution resolution, Sandbox, Vault          | [`src/harness/README.md`](src/harness/README.md), [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md)           |
-| External/control edges  | Platform/Web adapters and Commands                    | [`src/adapters/README.md`](src/adapters/README.md), [`src/adapters/commands/README.md`](src/adapters/commands/README.md)                                   |
-| Scheduling              | Scheduled-event protocol, office store, and scheduler | [`src/events/README.md`](src/events/README.md)                                                                                                             |
-| Observability           | OpenTelemetry pipeline and Sentry adapter             | [`src/observability/README.md`](src/observability/README.md), [ADR 0007](docs/adr/0007-standard-otlp-observability.md)                                     |
+| Group                   | Modules                                           | Detailed documentation                                                                                                                                     |
+| ----------------------- | ------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Platform edge           | Platform adapters, Conversation intake            | [`src/adapters/README.md`](src/adapters/README.md)                                                                                                         |
+| Orchestration           | Composition root, Conversation runtime            | [`src/runtime/README.md`](src/runtime/README.md), `src/main.ts`                                                                                            |
+| Agent core              | Harness and generic agent tools                   | [`src/harness/README.md`](src/harness/README.md)                                                                                                           |
+| Identity and data       | Office, Sessions, Configuration, State migrations | [`src/office/README.md`](src/office/README.md), [`src/sessions/README.md`](src/sessions/README.md), [`src/migrations/README.md`](src/migrations/README.md) |
+| Execution and authority | Harness execution resolution, Sandbox, Vault      | [`src/harness/README.md`](src/harness/README.md), [`src/sandbox/README.md`](src/sandbox/README.md), [`src/vault/README.md`](src/vault/README.md)           |
+| External/control edges  | Platform/Web adapters and Commands                | [`src/adapters/README.md`](src/adapters/README.md), [`src/adapters/commands/README.md`](src/adapters/commands/README.md)                                   |
+| Scheduling              | Scheduled events and the background job watcher   | [`src/events/README.md`](src/events/README.md)                                                                                                             |
+| Observability           | OpenTelemetry pipeline and Sentry adapter         | [`src/observability/README.md`](src/observability/README.md), [ADR 0007](docs/adr/0007-standard-otlp-observability.md)                                     |
 
 ## Main flows
 
@@ -112,7 +112,7 @@ Daemon boot proceeds conceptually as follows:
 5. Refuse to start while any State migration is pending, naming the `mikan migrate` command to run.
 6. Configure sandbox, vault, portal, and platform facilities.
 7. Construct the Conversation runtime with capability factories.
-8. Start platform bots, web services, and the event watcher.
+8. Start platform bots, web services, the event watcher, and the background job watcher.
 9. On the first shutdown signal, start one graceful shutdown: begin disconnecting platform intake and closing the Web server, stop new scheduled work, and give accepted adapter work up to 30 seconds to drain. If they settle, Conversation runtime then closes normally; on timeout, their unresolved promises are no longer allowed to block exit and runtime shutdown starts with no additional run grace, aborts in-flight runner materialization, and awaits cooperative rollback against a five-second deadline measured from runtime shutdown entry. The timed-out shutdown is reported as a failure. Every phase is attempted even when an earlier phase fails.
 10. Force-flush and shut down the OpenTelemetry providers, then close Sentry issue reporting, whether graceful application shutdown succeeds or fails. Attempt every configured backend and exit non-zero on any failure or timeout. A second OS signal explicitly abandons the graceful wait and forces a non-zero exit without starting another shutdown.
 
@@ -177,6 +177,12 @@ Cross-office scheduling is not available through the event tool; it requires
 the explicit actor-to-target grants defined in `docs/office-policy.md`, which
 are not implemented yet. Event text must never contain secrets.
 
+### Background jobs
+
+A long shell command can outlive the run that starts it ([ADR 0033](docs/adr/0033-background-jobs.md)). The `bash_background` tool starts it in the office's container under a wrapper that writes the job's output and exit code into `<office>/.jobs/<id>/`, and registers it with `BackgroundJobs` (`src/events/jobs.ts`), which keeps a host-only record of the session that owns it. That watcher polls the exit files from the host side of the office mount and, when a job exits or reaches its two-hour limit, submits a notice through the platform bot as a conversation event that names the owning session. From there it is an ordinary run: same queueing, session, credentials, and tools. While a job runs its container is retained against the idle stop. At boot the watcher restores its records before the first idle check and starts polling after the platform bots have started.
+
+Job files are written by the guest. The watcher reads only an exit code from them, without following links, and never routes from them; a job's output reaches the model only when it reads the log with `bash`.
+
 ### Memory
 
 Conversation `MEMORY.md` is policy: standing rules, preferences, and durable facts that every future session of the office should follow. Only the agent writes it, during a run, when a user states such knowledge or asks it to remember something ([ADR 0029](docs/adr/0029-remove-memory-capture.md)); no background step or schedule rewrites it ([ADR 0012](docs/adr/0012-remove-dream.md)). Episodic memory, what happened and when, is the session itself: Pi's compaction keeps a long-lived session within the context window, and every earlier session stays in the office's storage, where the `history` tool searches and reads it.
@@ -193,6 +199,7 @@ The conversation `MEMORY.md` is revisable orientation rather than final truth. N
     ├── MEMORY.md
     ├── skills/
     ├── attachments/
+    ├── .jobs/<id>/                       a background job's log, pid, and exit code
     └── log.jsonl
 
 ~/.mikan/                                 host-private authority
@@ -202,6 +209,7 @@ The conversation `MEMORY.md` is revisable orientation rather than final truth. N
 ├── vaults/
 └── conversations/<office-key>/
     ├── settings.json
+    ├── jobs.json                         background job records (ADR 0033)
     └── sessions/                         agent history; host-only (ADR 0016)
 ```
 

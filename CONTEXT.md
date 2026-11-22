@@ -17,6 +17,8 @@
 - **Live source**: An external system whose mutable state is authoritative only when queried, such as an issue tracker, calendar, deployment system, or financial API. Conversation memory may retain stable identifiers and instructions for querying a Live source, but cached observations such as current status, counts, balances, assignments, and latest results are not authoritative; an answer about them requires a fresh source read in the current run.
 - **Scheduled event**: A host-only JSON record under the owning office's state dir (`conversations/<office-key>/events/`), managed only through the `event` tool or Admin, that triggers an autonomous agent run — immediate, one-shot (`at`), or periodic (`schedule` + `timezone`). The scheduling tool and scheduler share one file-format contract, including the required fields for each event type. Scheduled events are execution requests, not the model/tool events produced during an agent run.
 
+- **Background job**: A shell command the agent starts with `bash_background` that keeps running in the office's Sandbox runtime after the run that started it ends. Its output and exit code are files in the office directory; its record, which names the session that owns it, is host-only. When it exits or reaches its time limit, the owning session receives one notice as input. A background job is a process, not an agent run, and not a Scheduled event.
+
 ## Execution surfaces
 
 - **Default office runtime**: The persistent, single-node Sandbox runtime assigned to one Conversation office. It provides strong environment isolation and a durable Workspace projection that survives turns and runtime restarts. The managed `oci:*` runtime belongs here. _Avoid_: treating a remote ephemeral worker as a default office.

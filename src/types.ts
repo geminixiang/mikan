@@ -3,6 +3,7 @@ import type { RunEventPublisher, RunnerExecutionContext } from "./harness/types.
 import type { MikanModels } from "./harness/models.js";
 import type { McpServerConfig } from "./harness/types.js";
 import type { EventScheduleSink } from "./events/index.js";
+import type { BackgroundJobSink } from "./events/jobs.js";
 import type { Office } from "./office/types.js";
 import type { DockerContainerManager } from "./sandbox/provisioner.js";
 import type { DesktopStart, DockerExecFile } from "./sandbox/types.js";
@@ -338,6 +339,7 @@ export interface CreateRunnerOptions {
   platformWorkspaceId?: string;
   openConnector?: McpServerConfig;
   eventScheduler?: EventScheduleSink;
+  backgroundJobs?: BackgroundJobSink;
   sessionScope: ResolvedSessionScope;
   chatHistory: ChatHistorySync;
   signal?: AbortSignal;

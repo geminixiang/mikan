@@ -34,6 +34,7 @@ mikan --sandbox=oci:mikan-sandbox:latest /path/to/workspace
 - vault 环境变量在执行时注入
 - vault 文件凭证会自动 bind mount 到容器中，目标由每个文件的名称推断（参阅 [Vault](/zh-cn/sandbox/vault/)）
 - 每 10 分钟检查一次空闲容器，并在至少 10 分钟无活动后停止；根据扫描时间，停止大约发生在最后一次跟踪使用后的 10–20 分钟
+- 有后台任务（agent 的 `bash_background` 工具）在运行的容器不会因空闲而停止；任务最长运行 2 小时，超时即被终止，其日志与退出码保存在该会话 workspace 目录的 `.jobs/<id>/`
 
 ## 容器引擎
 

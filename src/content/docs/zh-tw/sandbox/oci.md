@@ -34,6 +34,7 @@ mikan --sandbox=oci:mikan-sandbox:latest /path/to/workspace
 - vault env 會在執行時注入
 - vault file credential 會自動 bind mount 進 container，target 由每個檔案的名稱推斷（見 [Vault](/zh-tw/sandbox/vault/)）
 - 每 10 分鐘檢查一次閒置 containers，至少閒置 10 分鐘後停止；視掃描時間而定，約在最後一次追蹤使用後 10–20 分鐘停止
+- 有背景工作（agent 的 `bash_background` 工具）在執行的 container 不會因閒置而停止；工作最長執行 2 小時，逾時即被終止，其 log 與 exit code 存放在該對話 workspace 目錄的 `.jobs/<id>/`
 
 ## 容器引擎
 

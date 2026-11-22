@@ -34,6 +34,7 @@ Features:
 - vault env is injected at execution time
 - vault file credentials are automatically bind-mounted into the container, at a target inferred from each file's name (see [Vault](/sandbox/vault/))
 - idle containers are checked every 10 minutes and stopped after at least 10 minutes of inactivity; depending on scan timing, stopping occurs roughly 10–20 minutes after last tracked use
+- a container with a running background job (the agent's `bash_background` tool) is not stopped for idleness; a job is killed after 2 hours, and its log and exit code are in `.jobs/<id>/` in the conversation's workspace directory
 
 ## Container engine
 

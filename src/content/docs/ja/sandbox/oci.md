@@ -34,6 +34,7 @@ mikan --sandbox=oci:mikan-sandbox:latest /path/to/workspace
 - vault env は実行時に注入されます
 - vault file credential は、各ファイル名から推定される target に従って自動で container へ bind mount されます（[Vault](/ja/sandbox/vault/) を参照）
 - idle containers は 10 分ごとに確認され、少なくとも 10 分間利用がないと停止します。scan timing により、最後に追跡された利用から約 10〜20 分後に停止します
+- バックグラウンドジョブ（agent の `bash_background` tool）が実行中の container は idle では停止しません。ジョブは 2 時間で強制終了され、その log と exit code は会話の workspace ディレクトリの `.jobs/<id>/` に残ります
 
 ## コンテナエンジン
 

@@ -1,5 +1,6 @@
 import type { McpServerConfig, RunEventPublisher } from "../harness/types.js";
 import type { EventScheduleSink } from "../events/index.js";
+import type { BackgroundJobSink } from "../events/jobs.js";
 import type { CreateRunnerOptions, PiAgentWrapper, PlatformTrustModel } from "../types.js";
 import type {
   MessagingBot,
@@ -54,6 +55,7 @@ export interface ConversationRuntimeOptions extends Omit<CommandServices, "runti
   models: MikanModels;
   openConnector?: McpServerConfig;
   eventScheduler?: () => EventScheduleSink | undefined;
+  backgroundJobs?: BackgroundJobSink;
   platformToolPackFactories?: readonly PlatformToolPackFactory[];
   runnerFactory?: RunnerFactory;
   runEvents?: RunEventPublisher;

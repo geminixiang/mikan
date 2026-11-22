@@ -1,9 +1,17 @@
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { createMikanTools } from "../harness/tools/index.js";
 import { createGithubToolPack } from "../adapters/github/tool-pack.js";
 import type { PlatformGithubOps } from "../adapters/github/types.js";
 import type { EventStore } from "../events/index.js";
-import { createOfficeAddress } from "../office/index.js";
+import { createOfficeAddress, createWorkspace } from "../office/index.js";
+
+const address = createOfficeAddress("slack", "C1");
+const workspace = createWorkspace({
+  root: join(tmpdir(), "mikan-label-contract"),
+  stateDir: join(tmpdir(), "mikan-label-contract-state"),
+});
 
 function mockGithubOps(): PlatformGithubOps {
   return {
@@ -37,7 +45,9 @@ describe("every agent-facing tool requires a label parameter", () => {
       {},
       [createGithubToolPack(mockGithubOps(), new Set(["triage", "push"]))],
       undefined,
+      { sink: { register: vi.fn(), forget: vi.fn() }, office: workspace.office(address) },
     );
+    expect(tools.map((tool) => tool.name)).toContain("bash_background");
 
     const missing: string[] = [];
     for (const tool of tools) {

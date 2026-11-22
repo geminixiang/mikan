@@ -19,6 +19,7 @@ import {
   parseJsonSchemaValue,
   parseJsonValue,
   readJsonFileIfExists,
+  readSmallTextFileNoFollowIfExists,
   readJsonSchemaFileIfExists,
   readTextFileIfExists,
   readTextFileNoFollowIfExists,
@@ -104,6 +105,24 @@ describe("files inside agent-writable directories", () => {
     writeFileSync(file, "remember\n");
     expect(readTextFileNoFollowIfExists(file)).toBe("remember\n");
     expect(readTextFileNoFollowIfExists(join(dir, "office", "missing"))).toBeUndefined();
+  });
+
+  test("reading a small file returns its text and time, and refuses a larger one", () => {
+    const file = join(dir, "office", "exit");
+    writeFileSync(file, "143\n");
+    expect(readSmallTextFileNoFollowIfExists(file, 16)).toEqual({
+      text: "143\n",
+      mtimeMs: lstatSync(file).mtimeMs,
+    });
+    expect(() => readSmallTextFileNoFollowIfExists(file, 3)).toThrow(/at most 3 bytes/);
+    expect(readSmallTextFileNoFollowIfExists(join(dir, "office", "missing"), 16)).toBeUndefined();
+  });
+
+  test("reading a small file refuses a symbolic link and a directory", () => {
+    expect(() => readSmallTextFileNoFollowIfExists(link, 16)).toThrow(/symbolic link.*log\.jsonl/);
+    expect(() => readSmallTextFileNoFollowIfExists(join(dir, "office"), 16)).toThrow(
+      /regular file/,
+    );
   });
 
   test("appending refuses a symbolic link and leaves its target untouched", () => {

@@ -45,6 +45,13 @@ socket connects because the first message to an office would otherwise open it
 and abort its interrupted runs. A message queued behind a run but not yet started
 when the process stops is lost, as before.
 
+An event that names a session, such as a background job notice (ADR 0033), gets no anchor message
+and is offered to that session's queue, where it waits only for that session's running turn. It is
+answered in the thread its session key names, also when the event carries no `thread_ts`: a job
+started in a scheduled event's anchor thread has a thread session but no thread on its message. An
+event without a session is a scheduled event: it posts its anchor at the top level and runs in the
+anchor's thread, after the conversation's queue.
+
 Magic-word stop carries the source thread independently of the execution target
 (which may fall back to a parent session). Its acknowledgement and final update
 stay in that source thread. Shared-channel bare thread `stop` reaches control

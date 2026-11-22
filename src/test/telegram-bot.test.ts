@@ -638,4 +638,36 @@ describe("TelegramMessagingBot scheduled events", () => {
       expect(keys[1]).not.toBe(keys[0]);
     },
   );
+  test.each([
+    { name: "a private chat", conversationId: "123", sessionKey: "123", thread: undefined },
+    { name: "a group reply chain", conversationId: "-100", sessionKey: "-100:55", thread: "55" },
+  ])("an event that names a session runs in that session: $name", async (target) => {
+    const handler = makeHandler();
+    const { bot } = await startBot(handler, workspace);
+
+    expect(
+      bot.enqueueEvent(
+        createConversationEvent({
+          platform: "telegram",
+          type: "mention",
+          conversationId: target.conversationId,
+          conversationKind: target.thread ? "shared" : "direct",
+          user: "U1",
+          text: "[job a1b2c3d4 exited 0 after 3s] make",
+          ts: "job:a1b2c3d4",
+          thread_ts: target.thread,
+          sessionKey: target.sessionKey,
+        }),
+      ),
+    ).toBe(true);
+
+    await vi.waitFor(() => expect(handler.handleEvent).toHaveBeenCalledTimes(1));
+    const [event, , context] = vi.mocked(handler.handleEvent).mock.calls[0]!;
+    expect(event.sessionKey).toBe(target.sessionKey);
+    expect(context.message).toMatchObject({
+      id: "job:a1b2c3d4",
+      sessionKey: target.sessionKey,
+      threadTs: target.thread,
+    });
+  });
 });

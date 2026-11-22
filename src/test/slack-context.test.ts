@@ -328,6 +328,15 @@ describe("respondDiagnostic()", () => {
     );
   });
 
+  test("a job notice has no message to react to", async () => {
+    const bot = makeSlackMessagingBot();
+    const { responder } = createSlackAdapters(makeEvent({ ts: "job:a1b2c3d4" }), bot);
+
+    await responder.react?.("saluting_face");
+
+    expect(bot.addReaction).not.toHaveBeenCalled();
+  });
+
   test("event-file-shaped ts diagnostics anchor to the bot message after respond", async () => {
     const postInThread = vi.fn().mockResolvedValue("THREAD_MSG");
     const bot = makeSlackMessagingBot({

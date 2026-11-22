@@ -49,6 +49,13 @@ describe("react", () => {
     await responder.react!("eyes");
     expect(bot.addReaction).toHaveBeenCalledWith("123456", "1001", "eyes");
   });
+
+  test("is unavailable for a job notice, which has no message to react to", () => {
+    const event = makeEvent({ ts: "job:a1b2c3d4" });
+    const { responder } = createTelegramAdapters(event, makeTelegramMessagingBot());
+
+    expect(responder.react).toBeUndefined();
+  });
 });
 
 describe("session key derivation", () => {

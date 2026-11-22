@@ -54,12 +54,43 @@ describe("react", () => {
     expect(bot.addReaction).toHaveBeenCalledWith("CH001", "MSG001", "eyes");
   });
 
-  test("is unavailable for a synthetic (event-triggered) message reference", () => {
-    const bot = makeDiscordMessagingBot();
-    const event = makeEvent({ ts: "event:reminder.json" });
-    const { responder } = createDiscordAdapters(event, bot);
+  test.each(["event:reminder.json", "job:a1b2c3d4"])(
+    "is unavailable for the synthetic message reference %s",
+    (ts) => {
+      const bot = makeDiscordMessagingBot();
+      const { responder } = createDiscordAdapters(makeEvent({ ts }), bot);
 
-    expect(responder.react).toBeUndefined();
+      expect(responder.react).toBeUndefined();
+    },
+  );
+});
+
+describe("a job notice", () => {
+  test("is answered in the channel, not as a reply to its synthetic ID", async () => {
+    const bot = makeDiscordMessagingBot();
+    const event = makeEvent({ ts: "job:a1b2c3d4", sessionKey: "CH001" });
+    const { responder, message } = createDiscordAdapters(event, bot);
+
+    await responder.respond("the build passed");
+
+    expect(message.sessionKey).toBe("CH001");
+    expect(bot.postReply).not.toHaveBeenCalled();
+    expect(bot.postMessage).toHaveBeenCalledWith("CH001", expect.stringContaining("build passed"));
+  });
+
+  test("is answered in the thread its session replies in", async () => {
+    const bot = makeDiscordMessagingBot();
+    const event = makeEvent({ ts: "job:a1b2c3d4", thread_ts: "TH9", sessionKey: "CH001:TH9" });
+    const { responder, message } = createDiscordAdapters(event, bot);
+
+    await responder.respond("the build passed");
+
+    expect(message.sessionKey).toBe("CH001:TH9");
+    expect(bot.postInThread).toHaveBeenCalledWith(
+      "CH001",
+      "TH9",
+      expect.stringContaining("build passed"),
+    );
   });
 });
 

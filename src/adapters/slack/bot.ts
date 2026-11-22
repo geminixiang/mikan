@@ -668,6 +668,14 @@ export class SlackMessagingBot implements MessagingBot {
   enqueueEvent(event: ConversationEvent): boolean {
     if (this.stopped) return false;
     const conversationId = event.address.conversationId;
+    if (event.sessionKey) {
+      const session = parseSlackSessionKey(event.sessionKey);
+      const inSession = {
+        ...event,
+        thread_ts: event.thread_ts ?? (session.kind === "thread" ? session.threadTs : undefined),
+      };
+      return this.queues.get(event.sessionKey).offerEvent(event, () => this.runEvent(inSession));
+    }
     return this.queues.get(conversationId).offerEvent(event, async () => {
       let anchorTs: string | undefined;
       if (!event.thread_ts) {
@@ -706,33 +714,36 @@ export class SlackMessagingBot implements MessagingBot {
       const runQueueKey = planSlackAdapterSession(eventForRun, {
         initialMessageTs: eventPlan.initialMessageTs,
       }).sessionKey;
-      const run = async () => {
-        const slackEvent = createConversationEvent({
-          platform: "slack",
-          address: eventForRun.address,
-          type: eventForRun.type as SlackEvent["type"],
-          conversationId,
-          conversationKind: eventForRun.conversationKind,
-          channel: conversationId,
-          ts: eventForRun.ts,
-          thread_ts: eventForRun.thread_ts,
-          user: eventForRun.user,
-          text: eventForRun.text,
-          attachments: eventForRun.attachments,
-          sessionKey: eventForRun.sessionKey,
-        }) as SlackEvent;
-        const context = createSlackAdapters(slackEvent, this, {
-          initialMessageTs: eventPlan.initialMessageTs,
-          replyMode: this.resolveReplyMode(eventForRun.address),
-        });
-        return this.handler.handleEvent(eventForRun, this, context);
-      };
+      const run = () => this.runEvent(eventForRun, eventPlan.initialMessageTs);
       const runQueue = this.queues.get(runQueueKey);
       if (!runQueue.enqueue(run)) {
         await runQueue.close();
         await run();
       }
     });
+  }
+
+  private runEvent(event: ConversationEvent, initialMessageTs?: string): Promise<void> {
+    const conversationId = event.address.conversationId;
+    const slackEvent = createConversationEvent({
+      platform: "slack",
+      address: event.address,
+      type: event.type as SlackEvent["type"],
+      conversationId,
+      conversationKind: event.conversationKind,
+      channel: conversationId,
+      ts: event.ts,
+      thread_ts: event.thread_ts,
+      user: event.user,
+      text: event.text,
+      attachments: event.attachments,
+      sessionKey: event.sessionKey,
+    }) as SlackEvent;
+    const context = createSlackAdapters(slackEvent, this, {
+      initialMessageTs,
+      replyMode: this.resolveReplyMode(event.address),
+    });
+    return this.handler.handleEvent(event, this, context);
   }
 
   private async resolveQueueKey(conversationId: string, sessionKey: string): Promise<string> {

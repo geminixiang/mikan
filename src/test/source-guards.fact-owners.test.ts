@@ -484,6 +484,22 @@ const guards: FactOwnerGuard[] = [
     ],
   },
   {
+    id: "job-directory-name",
+    owner: "JOBS_DIR_NAME in src/events/jobs.ts",
+    ownerFiles: ["src/events/jobs.ts"],
+    find: literalsMatching(/^(?:\S*\/)?\.jobs$/, literalEndings),
+    copies: [
+      'const path = join(office.dir, ".jobs");',
+      "const path = `${office.dir}/.jobs`;",
+      "const path = join(dir, '.jobs');",
+    ],
+    legitimate: [
+      "const path = join(office.dir, JOBS_DIR_NAME);",
+      'const hint = "job files are under .jobs in the office";',
+      "const records = file?.jobs ?? [];",
+    ],
+  },
+  {
     id: "unexpected-json-shape",
     owner: "the JSON guard failure kinds in src/file-guards.ts",
     ownerFiles: ["src/file-guards.ts"],

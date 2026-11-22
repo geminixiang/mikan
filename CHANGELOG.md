@@ -13,6 +13,13 @@ change in a minor release.
 
 ### Added
 
+- The `bash_background` tool (ADR 0033): the model starts a long shell command and gets a job ID at
+  once, and when the command exits a message with its exit code and the path of its log arrives in
+  the same conversation for the agent to answer. It works on Slack, Telegram, Discord, and
+  GitHub. A job is killed after 2 hours, keeps its sandbox from being stopped for idleness while it
+  runs, and survives a restart of mikan, `stop`, and `/new`. Its files are in `.jobs/<id>/` in the
+  conversation's workspace directory, and its record is `jobs.json` in the conversation's state
+  directory.
 - The `subagent` tool is back in a minimal form (ADR 0031): the model hands one task to a subagent
   and gets its answer. A subagent has `read`, `bash`, `edit`, and `write`, cannot delegate, and at
   most four run at once in a conversation's office. Profiles, `<workspace>/agents/`, task graphs,

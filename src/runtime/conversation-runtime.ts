@@ -466,6 +466,7 @@ class ConversationRuntimeImpl implements ConversationRuntime {
       platformWorkspaceId: options.platformWorkspaceId,
       openConnector: this.options.openConnector,
       eventScheduler: this.options.eventScheduler?.(),
+      backgroundJobs: this.options.backgroundJobs,
       sessionScope,
       chatHistory: this.chatSessionManager,
       signal,

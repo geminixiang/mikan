@@ -26,7 +26,13 @@ function unsupported(name: string): never {
   throw new Error(`Test tool API does not support ${name}`);
 }
 
-function createTestToolApi(options: { env?: ExecutionEnv; callId?: string } = {}): TestToolApi {
+interface TestToolOptions {
+  env?: ExecutionEnv;
+  callId?: string;
+  memos?: Map<string, JsonValue>;
+}
+
+function createTestToolApi(options: TestToolOptions = {}): TestToolApi {
   const chunks: string[] = [];
   const details: JsonValue[] = [];
   const diagnostics: ToolDiagnostic[] = [];
@@ -60,7 +66,11 @@ function createTestToolApi(options: { env?: ExecutionEnv; callId?: string } = {}
       details.push(value);
     },
     commit: async () => unsupported("commit"),
-    memo: async () => unsupported("memo"),
+    memo: async <T extends JsonValue>(name: string, ...rest: unknown[]) => {
+      const memos = options.memos ?? unsupported("memo");
+      if (rest.length === 2 && !memos.has(name)) memos.set(name, rest[0] as JsonValue);
+      return memos.get(name) as T;
+    },
     createTask: async () => unsupported("createTask"),
     getTask: async () => unsupported("getTask"),
     waitForTask: async () => unsupported("waitForTask"),
@@ -75,7 +85,7 @@ function createTestToolApi(options: { env?: ExecutionEnv; callId?: string } = {}
 export async function runTestTool(
   tool: Pick<ToolRegistration, "execute">,
   args: unknown,
-  options: { env?: ExecutionEnv; callId?: string; signal?: AbortSignal } = {},
+  options: TestToolOptions & { signal?: AbortSignal } = {},
 ): Promise<ToolExecutionResult & { content: NonNullable<ToolExecutionResult["output"]> }> {
   const { api, output } = createTestToolApi(options);
   const context = options.signal ? withAbortSignal(options.signal, TEST_CONTEXT) : TEST_CONTEXT;

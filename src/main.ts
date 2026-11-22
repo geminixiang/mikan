@@ -26,6 +26,7 @@ import { GITHUB_READ_TOOL } from "./adapters/github/tools/read.js";
 import { GITHUB_REVIEW_REPLY_TOOL } from "./adapters/github/tools/review-reply.js";
 import type { PlatformToolPackFactory } from "./harness/tools/types.js";
 import { EventScheduler } from "./events/scheduler.js";
+import { BackgroundJobs } from "./events/jobs.js";
 import * as log from "./log.js";
 import { createProcessShutdownHandler, runShutdownSteps } from "./cli/process-lifecycle.js";
 import { closeWebServer, startWebServer } from "./adapters/web/server.js";
@@ -309,16 +310,18 @@ function portalBaseUrl(): string | undefined {
 }
 const MANAGED_SANDBOX_IDLE_TIMEOUT_MS = 10 * 60 * 1000;
 
+const botsByPlatform: Record<string, MessagingBot> = {};
+const backgroundJobs = new BackgroundJobs(workspace, botsByPlatform, { containers: provisioner });
+
 if (provisioner) {
   await provisioner.reconcile(workspace.root);
+  backgroundJobs.restore();
   await provisioner.stopIdle(MANAGED_SANDBOX_IDLE_TIMEOUT_MS);
   setInterval(
     () => provisioner.stopIdle(MANAGED_SANDBOX_IDLE_TIMEOUT_MS),
     MANAGED_SANDBOX_IDLE_TIMEOUT_MS,
   ).unref();
 }
-
-const botsByPlatform: Record<string, MessagingBot> = {};
 
 function requireGithubBot(op: string): GithubMessagingBot {
   const bot = botsByPlatform.github as GithubMessagingBot | undefined;
@@ -390,6 +393,7 @@ const handler = createConversationRuntime({
   workspace,
   models: mikanModels,
   eventScheduler: () => eventScheduler,
+  backgroundJobs,
   vaultManager,
   provisioner,
   linkTokenStore,
@@ -587,6 +591,7 @@ const shutdown = createProcessShutdownHandler({
         name: "event scheduler",
         run: async () => {
           eventScheduler?.stop();
+          backgroundJobs.stop();
         },
       },
       { name: "conversation work", run: () => drainConversationWork(intakeStop) },
@@ -609,3 +614,4 @@ await Promise.all(
     }),
   ),
 );
+backgroundJobs.start();

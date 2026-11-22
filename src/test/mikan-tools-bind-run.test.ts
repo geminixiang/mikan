@@ -33,7 +33,7 @@ function boundAttachTool(uploadFile: ConversationResponder["uploadFile"]) {
   const env = new NodeExecutionEnv({ cwd: root });
   const { tools, bindRun } = createMikanTools({ env: () => env }, eventStore(), {});
   bindRun({
-    message: { address, conversationKind: "shared", userId: "U1" },
+    message: { address, sessionKey: "C1", conversationKind: "shared", userId: "U1" },
     responder: { uploadFile } as Pick<ConversationResponder, "uploadFile"> as ConversationResponder,
     platformName: "slack",
     runtimeWorkspaceRoot: root,

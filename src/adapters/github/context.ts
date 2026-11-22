@@ -1,3 +1,4 @@
+import { isJobRunId } from "../../events/jobs.js";
 import type { ConversationContext } from "../../types.js";
 import { parseGithubConversationId } from "../../office/index.js";
 import { createProgressiveRenderer } from "../progressive-renderer.js";
@@ -105,7 +106,9 @@ export function createGithubAdapters(
       }),
     uploadFallbackNote: (name) =>
       `*(file \`${name}\` was produced, but the GitHub adapter cannot attach files to comments)*`,
-    react: (emoji) => bot.addReaction(conversationId, event.ts, emoji),
+    react: isJobRunId(event.ts)
+      ? undefined
+      : (emoji) => bot.addReaction(conversationId, event.ts, emoji),
   });
 
   return { address: message.address, message, responder, platform };

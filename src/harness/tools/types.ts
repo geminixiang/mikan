@@ -18,7 +18,10 @@ export interface PlatformToolPack {
 export type PlatformToolPackFactory = () => PlatformToolPack;
 
 export interface MikanToolRunContext {
-  message: Pick<ConversationMessage, "address" | "conversationKind" | "userId" | "threadTs">;
+  message: Pick<
+    ConversationMessage,
+    "address" | "sessionKey" | "conversationKind" | "userId" | "threadTs"
+  >;
   responder: ConversationResponder;
   platformName: string;
   runtimeWorkspaceRoot: string;

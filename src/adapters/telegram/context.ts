@@ -1,3 +1,4 @@
+import { isJobRunId } from "../../events/jobs.js";
 import type { ConversationContext } from "../../types.js";
 import { deriveSessionKey } from "../../sessions/session-key.js";
 import { createProgressiveRenderer } from "../progressive-renderer.js";
@@ -60,7 +61,9 @@ export function createTelegramAdapters(
         answer: { replyTo: message.id, sessionKey: message.sessionKey },
       }),
     uploadFile: (filePath, title) => bot.uploadFile(conversationId, filePath, title),
-    react: (emoji) => bot.addReaction(conversationId, event.ts, emoji),
+    react: isJobRunId(event.ts)
+      ? undefined
+      : (emoji) => bot.addReaction(conversationId, event.ts, emoji),
   });
 
   return { address: message.address, message, responder, platform };

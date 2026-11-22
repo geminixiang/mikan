@@ -2,6 +2,9 @@ import type { Api, Model } from "@earendil-works/pi-ai";
 import { createAttachTool, normalizeAttachRuntimePath, withStagedRuntimeFile } from "./attach.js";
 import type { SandboxResourceController } from "../../types.js";
 import type { EventStore } from "../../events/index.js";
+import type { BackgroundJobSink } from "../../events/jobs.js";
+import type { Office } from "../../office/types.js";
+import { createBashBackgroundTool } from "./bash-background.js";
 import { createEventTool } from "./event.js";
 import { createGenerateImageTool } from "./generate-image.js";
 import type { ToolRegistration } from "@earendil-works/pi-durable";
@@ -27,6 +30,7 @@ export function createMikanTools(
     getApiKey: () => Promise<string | undefined>;
     outputDir: string;
   },
+  backgroundJobs?: { sink: BackgroundJobSink; office: Office },
 ): {
   tools: ToolRegistration[];
   bindRun: (ctx: MikanToolRunContext) => void;
@@ -37,10 +41,14 @@ export function createMikanTools(
   const jevTool = createJevTool();
   const { tool: eventTool, setEventContext } = createEventTool(eventStore);
   const { tool: sandboxTool, setSandboxContext } = createSandboxTool(sandboxController);
+  const jobTool = backgroundJobs
+    ? createBashBackgroundTool(toolContext, backgroundJobs.sink, backgroundJobs.office)
+    : undefined;
   const packTools = platformToolPacks.flatMap((pack) => pack.tools);
   return {
     tools: [
       ...createSandboxTools(),
+      ...(jobTool ? [jobTool.tool] : []),
       eventTool,
       sandboxTool,
       attachTool,
@@ -60,6 +68,13 @@ export function createMikanTools(
         userId,
       });
       setSandboxContext({ address, userId });
+      jobTool?.setRunContext({
+        sessionKey: message.sessionKey,
+        threadTs: message.threadTs,
+        userId,
+        conversationKind: message.conversationKind,
+        runtimeWorkspaceRoot,
+      });
       setUploadFunction(async (filePath, title) => {
         const runtimePath = normalizeAttachRuntimePath(filePath, runtimeWorkspaceRoot);
         await withStagedRuntimeFile(toolContext.env(), runtimePath, (stagedPath) =>

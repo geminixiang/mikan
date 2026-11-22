@@ -650,6 +650,28 @@ describe("GithubMessagingBot", () => {
     });
   });
 
+  test("an event that names the conversation's session runs in it", async () => {
+    const bot = await startedBot();
+
+    expect(
+      bot.enqueueEvent({
+        type: "mention",
+        address: createOfficeAddress("github", CONVERSATION_ID),
+        conversationKind: "shared",
+        ts: "job:a1b2c3d4",
+        sessionKey: CONVERSATION_ID,
+        user: "octocat",
+        text: "[job a1b2c3d4 exited 0 after 3s] make",
+      }),
+    ).toBe(true);
+    await settleQueues();
+
+    const [event, , context] = vi.mocked(handler.handleEvent).mock.calls[0]!;
+    expect(event.sessionKey).toBe(CONVERSATION_ID);
+    expect(context.message).toMatchObject({ id: "job:a1b2c3d4", sessionKey: CONVERSATION_ID });
+    expect(context.responder.react).toBeUndefined();
+  });
+
   test("a triggered conversation leaves the office without a host-side clone", async () => {
     const bot = await startedBot();
     await deliver(bot, openedDelivery("@acme-agent review this", { pullRequest: true }));
