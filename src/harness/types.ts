@@ -13,7 +13,6 @@ import type { resolveConversationSettings } from "../settings/index.js";
 import type { RuntimePathContext } from "../sandbox/types.js";
 import type { WorkspaceProjection, Office } from "../office/types.js";
 
-import type { JsonValue } from "@earendil-works/chord/json";
 import type { CompactionPolicy, ToolRegistration } from "@earendil-works/pi-durable";
 import type { ExecutionEnv } from "@earendil-works/pi-durable/env";
 import type { TextContent } from "@earendil-works/pi-ai";
@@ -207,7 +206,6 @@ export type HarnessEvent =
   | { type: "text_delta"; delta: string }
   | { type: "message_end"; message: Message }
   | { type: "tool_execution_start"; toolCallId: string; toolName: string; args: unknown }
-  | { type: "tool_execution_update"; toolCallId: string; toolName: string; details: JsonValue }
   | {
       type: "tool_execution_end";
       toolCallId: string;
@@ -230,7 +228,6 @@ export type HarnessEvent =
       delayMs: number;
       errorMessage: string;
     }
-  | { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string }
   | {
       type: "budget_exceeded";
       reason: string;

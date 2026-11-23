@@ -86,7 +86,6 @@ interface FollowedView {
   calls: Map<string, { name: string; args: unknown }>;
   startedTools: Set<string>;
   endedTools: Set<string>;
-  toolDetails: Map<string, unknown>;
   retryAt: number | undefined;
   compactions: Map<number, CompactionStatus>;
   usage: unknown;
@@ -107,7 +106,6 @@ function followFrom(view: ConversationView): FollowedView {
     calls,
     startedTools: new Set(),
     endedTools: new Set(),
-    toolDetails: new Map(),
     retryAt: undefined,
     compactions: new Map(),
     usage: view.docs["pi.usage"],
@@ -133,7 +131,6 @@ export class MikanAgentSession {
   private deadlineNotification: Promise<void> | undefined;
   private runBudget: BudgetSettings = {};
   private budgetExceededReason: string | undefined;
-  private retryAttempt = 0;
   private runMessages: Message[] = [];
   private streamingContent: AssistantMessage["content"] = [];
   private followed: FollowedView | undefined;
@@ -241,7 +238,6 @@ export class MikanAgentSession {
     this.budgetExceededReason = undefined;
     this.cancellation = undefined;
     this.cancellationError = undefined;
-    this.retryAttempt = 0;
     this.runMessages = [];
     this.followed = undefined;
     this.viewQueue = Promise.resolve();
@@ -272,7 +268,6 @@ export class MikanAgentSession {
       if (this.runAborted) return;
       await this.installRunTools(attached, options?.tools ?? this.options.tools);
       if (!(await this.checkCallBudget())) return;
-      await this.sessionStore.recordRun({ startedAt: Date.now() });
       watch = await attached.conversation.watch(context);
       this.followed = followFrom(watch.value);
       this.observedUsage = sumUsageState(usageState(watch.value));
@@ -337,9 +332,6 @@ export class MikanAgentSession {
       await this.cancellation;
       await this.deadlineNotification;
       await watch?.stop();
-      if (this.attached) {
-        await this.sessionStore.recordRun({ endedAt: Date.now(), status });
-      }
       if (this.cancellationError) throw this.cancellationError;
     } catch (error) {
       cleanupFailure = { error };
@@ -559,7 +551,6 @@ export class MikanAgentSession {
       if (liveState(view).run === undefined) break;
       await conversation.waitForIdle(context);
     }
-    await this.endRetry(this.runAborted ? "Retry cancelled" : undefined);
   }
 
   private async applyView(view: ConversationView): Promise<void> {
@@ -641,26 +632,15 @@ export class MikanAgentSession {
       await this.streamContent(message.content);
     }
     const retry = live.generation?.retry;
+    if (!retry) followed.retryAt = undefined;
     if (retry && retry.at !== followed.retryAt) {
       followed.retryAt = retry.at;
-      this.retryAttempt = live.generation?.attempt ?? 1;
       await this.emit({
         type: "auto_retry_start",
-        attempt: this.retryAttempt,
+        attempt: live.generation?.attempt ?? 1,
         maxAttempts: this.settings.retry.maxRetries,
         delayMs: Math.max(0, retry.at - Date.now()),
         errorMessage: retry.error,
-      });
-    }
-    if (!retry && followed.retryAt !== undefined) {
-      followed.retryAt = undefined;
-      const attempt = this.retryAttempt;
-      this.retryAttempt = 0;
-      await this.emit({
-        type: "auto_retry_end",
-        attempt,
-        success: !this.runAborted,
-        finalError: this.runAborted ? "Retry cancelled" : undefined,
       });
     }
   }
@@ -671,15 +651,6 @@ export class MikanAgentSession {
       const nested = "arguments" in slot ? slot : undefined;
       if (nested) followed.calls.set(slot.callId, { name: slot.name, args: nested.arguments });
       await this.startTool(followed, slot.callId, slot.name);
-      if (slot.details !== undefined && followed.toolDetails.get(slot.callId) !== slot.details) {
-        followed.toolDetails.set(slot.callId, slot.details);
-        await this.emit({
-          type: "tool_execution_update",
-          toolCallId: slot.callId,
-          toolName: slot.name,
-          details: slot.details,
-        });
-      }
       if (slot.status !== "done") continue;
       if (nested) {
         await this.endTool(followed, slot.callId, slot.name, {
@@ -771,17 +742,6 @@ export class MikanAgentSession {
     this.observedUsage = total;
     const reason = this.resourceOverBudgetReason();
     if (reason) await this.exceedBudget(reason);
-  }
-
-  private async endRetry(finalError: string | undefined): Promise<void> {
-    if (this.retryAttempt === 0) return;
-    await this.emit({
-      type: "auto_retry_end",
-      attempt: this.retryAttempt,
-      success: false,
-      finalError,
-    });
-    this.retryAttempt = 0;
   }
 
   private async endMessage(message: Message | undefined): Promise<void> {

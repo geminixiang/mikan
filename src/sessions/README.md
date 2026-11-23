@@ -4,7 +4,7 @@ This directory manages synchronization between chat history and harness sessions
 
 Each office keeps its sessions in one pi-durable SQLite storage, `Office.sessionsPath`, under the office's State dir, which no sandbox sees (ADR 0016, ADR 0018). Per-key runtime state is office-keyed, but the **session key itself stays a raw platform value** (`conversationId[":"suffix]`). Office keys name directories; session keys name conversations as the platform reports them.
 
-The top-level session is the storage's root conversation; every other session is a conversation that the `mikan.sessions` document maps from its session key, with the session's ID and creation time. Sessions that `mikan migrate` imported from earlier `/new` generations have `earlier:<id>` keys. A session's name and last run record are its `mikan.session` document, and host bookkeeping entries are `mikan.custom` entries.
+The top-level session is the storage's root conversation; every other session is a conversation that the `mikan.sessions` document maps from its session key, with the session's ID and creation time. Sessions that `mikan migrate` imported from earlier `/new` generations have `earlier:<id>` keys. A session's name is its `mikan.session` document (a document written before 2026-11-23 may also hold a `run` field, which nothing reads), and host bookkeeping entries are `mikan.custom` entries.
 
 ## Keeping up with Pi
 

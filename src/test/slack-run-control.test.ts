@@ -574,7 +574,6 @@ async function writeFinishedTaskThread(root: string): Promise<void> {
   const thread = await SessionStore.open(office, `D123:${root}`);
   await thread.appendMessage({ role: "user", content: "LONG TASK CONTEXT", timestamp: 1 });
   await thread.appendCustomEntry("mikan.control_input", { messageId: "1.000002" });
-  await thread.recordRun({ startedAt: 1, endedAt: 2, status: "completed" });
   await thread.close();
 }
 

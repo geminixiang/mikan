@@ -175,7 +175,7 @@ describe("harness run cancellation", () => {
   });
 
   test("abort from retry-start notification prevents the retry", async () => {
-    const { session, faux, events } = await setup();
+    const { session, faux } = await setup();
     faux.setResponses([retryError(), fauxAssistantMessage("must not retry")]);
     session.subscribe((event) => {
       if (event.type === "auto_retry_start") session.abort();
@@ -184,13 +184,6 @@ describe("harness run cancellation", () => {
     await vi.runAllTimersAsync();
     await run;
     expect(faux.state.callCount).toBe(1);
-    expect(events).toContainEqual(
-      expect.objectContaining({
-        type: "auto_retry_end",
-        success: false,
-        finalError: "Retry cancelled",
-      }),
-    );
   });
 
   test("abort from compaction-start notification prevents the next model turn", async () => {

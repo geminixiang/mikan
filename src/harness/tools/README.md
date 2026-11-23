@@ -21,8 +21,7 @@ message; its final `toolResult` is a separate session message. A short result
 therefore does **not** mean the call's input was omitted. The result's `content`
 (text or image) and, when present, `details` can be persisted. After a run,
 `src/sessions/session-store.ts` rebuilds model context from message entries;
-compaction can replace older entries with a summary and retained tail. A
-`tool_execution_update` (`api.details`) is forwarded as a live progress event, not an
+compaction can replace older entries with a summary and retained tail. Progress a tool reports while it runs (`api.details`) is not shown and is not an
 independent persisted message. If progress data is also returned in the final
 result, that copy does enter the session.
 

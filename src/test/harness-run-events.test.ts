@@ -36,17 +36,6 @@ describe("toRunEvent", () => {
     ).toMatchObject({ label: `${JEV_TOOL} · Check memory` });
   });
 
-  test("ignores partial tool results", () => {
-    expect(
-      toRunEvent({
-        type: "tool_execution_update",
-        toolCallId: "b1",
-        toolName: "bash",
-        details: { other: true },
-      }),
-    ).toBeUndefined();
-  });
-
   test("reports a finished tool with its text result", () => {
     expect(
       toRunEvent({

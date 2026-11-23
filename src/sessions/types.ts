@@ -71,12 +71,6 @@ export type SessionEntry = SessionMessageEntry | SessionCustomEntry | SessionCom
 
 export type SessionRunStatus = "completed" | "aborted" | "failed";
 
-export interface SessionRunRecord {
-  startedAt?: number;
-  endedAt?: number;
-  status?: SessionRunStatus;
-}
-
 export interface ResponseUsage {
   timestamp: number;
   usage: Usage;
@@ -84,8 +78,6 @@ export interface ResponseUsage {
 
 export interface SessionExecution {
   open: boolean;
-  started: boolean;
-  result?: { status: SessionRunStatus; endedAt: number };
 }
 
 export interface SessionSpend {

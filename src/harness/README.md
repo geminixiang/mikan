@@ -281,7 +281,7 @@ prompt points it at the CLI's version-matched skill (`agent-browser skills get c
 
 ## Run control
 
-`SessionStore.inspectExecution` reads the live run and mikan's run record through
+`SessionStore.inspectExecution` reads whether Pi has a run open through
 the office's shared storage (`OfficeStorage.acquire`); it does not create a runner.
 
 Runner cancellation is remembered across prompt preparation. Stop before Pi starts

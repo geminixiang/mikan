@@ -45,7 +45,6 @@ import type {
   SessionHeader,
   SessionInspection,
   SessionListing,
-  SessionRunRecord,
   SessionExecution,
   SessionSpend,
   ResponseUsage,
@@ -65,7 +64,6 @@ const ENTRY_PAGE_SIZE = 500;
 
 type SessionDocState = Partial<{
   name: string;
-  run: Partial<SessionRunRecord>;
   importedUsage: true;
 }>;
 
@@ -493,16 +491,7 @@ async function readExecution(
   conversationId: ConversationId,
 ): Promise<SessionExecution> {
   const live = await storage.harness.snapshot(LiveDoc, conversationId, context);
-  const run = (await storage.harness.snapshot(SessionDoc, conversationId, context))?.run;
-  const open = live?.run !== undefined;
-  return {
-    open,
-    started: open || run !== undefined,
-    result:
-      run?.endedAt !== undefined && run.status !== undefined
-        ? { status: run.status, endedAt: run.endedAt }
-        : undefined,
-  };
+  return { open: live?.run !== undefined };
 }
 
 function writeSessionIndex(tx: Tx, key: string, record: SessionIndexRecord): Promise<void> {
@@ -951,10 +940,10 @@ export class SessionStore implements SessionInspection {
   }
 
   static async inspectExecution(office: Office, key: string): Promise<SessionExecution> {
-    if (!existsSync(office.sessionsPath)) return { open: false, started: false };
+    if (!existsSync(office.sessionsPath)) return { open: false };
     return withOfficeStorage(office, async (storage) => {
       const session = await lookupSession(storage, key);
-      if (!session) return { open: false, started: false };
+      if (!session) return { open: false };
       return readExecution(storage, session.conversation.id);
     });
   }
@@ -1122,12 +1111,6 @@ export class SessionStore implements SessionInspection {
   async setSessionName(name: string): Promise<void> {
     await this.updateSessionDoc((doc) => {
       doc.name = name.trim() || undefined;
-    });
-  }
-
-  async recordRun(run: SessionRunRecord): Promise<void> {
-    await this.updateSessionDoc((doc) => {
-      doc.run = { ...run };
     });
   }
 

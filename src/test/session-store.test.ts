@@ -193,9 +193,6 @@ describe("SessionStore", () => {
   test("an office without sessions has no storage and nothing to inspect", async () => {
     expect(await SessionStore.list(office)).toEqual([]);
     expect(await SessionStore.inspect(office, "C1")).toBeUndefined();
-    expect(await SessionStore.inspectExecution(office, "C1")).toEqual({
-      open: false,
-      started: false,
-    });
+    expect(await SessionStore.inspectExecution(office, "C1")).toEqual({ open: false });
   });
 });
