@@ -164,7 +164,14 @@ After that check three things were added: the buttons become a line saying who t
 
 Asked whether the one model above the unwanted-suggestion criterion should hold the section back, the owner left the decision to the maintainer and named the two models that changes are judged on from now on: `gpt-6.2-sol` and `claude-opus-5-5`. The section stays as shipped: the model above the criterion is not one of the two, and its mistake is a follow-up button after an explanation, not a guessed answer.
 
-On the held-out messages, thirty runs a cell, `gpt-6.2-sol` gave a wanted suggestion on 30 of 30 and an unwanted one on 0 of 30, never more than two lines. `claude-opus-5-5` could not be measured: every request failed at the gateway used for the eval, whose credential for that provider had expired. It is measured when that route works again.
+On the held-out messages, thirty runs a cell:
+
+| Model             | Wanted and given | Unwanted and given | More than two lines |
+| ----------------- | ---------------- | ------------------ | ------------------- |
+| `gpt-6.2-sol`     | 30 of 30         | 0 of 30            | 0                   |
+| `claude-opus-5-5` | 26 of 30         | 0 of 30            | 0                   |
+
+The four replies without a wanted suggestion were a launch checklist, on all three of its runs, and one trip plan. Both models meet every criterion.
 
 ## Telegram (2026-11-22)
 
