@@ -21,6 +21,7 @@ export interface DesktopWebOptions {
 }
 
 export class InMemoryDesktopTokenStore extends InMemoryTokenStore<DesktopToken> {
+  protected override readonly portal = "desktop";
   create(options: DesktopTokenCreateOptions): DesktopToken {
     return this.createRecord(DESKTOP_TOKEN_TTL_MS, {
       platform: options.platform,

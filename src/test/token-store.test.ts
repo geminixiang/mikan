@@ -2,6 +2,7 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { InMemoryAdminTokenStore } from "../adapters/web/admin/portal.js";
 import { InMemoryLinkTokenStore } from "../adapters/web/login/portal.js";
 import { InMemorySessionViewTokenStore } from "../adapters/web/session-view/portal.js";
+import * as log from "../log.js";
 import { createOfficeAddress, createWorkspace } from "../office/index.js";
 
 const OFFICE = createWorkspace({
@@ -19,6 +20,22 @@ function makeStore() {
 describe("InMemoryTokenStore base", () => {
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  test("logs a portal's link once when created and once when first opened, without the token", () => {
+    const logInfo = vi.spyOn(log, "logInfo").mockImplementation(() => {});
+    const { store, create } = makeStore();
+
+    const t = create();
+    store.peek(t.token);
+    store.peek(t.token);
+    store.peek("unknown");
+
+    expect(logInfo.mock.calls).toEqual([
+      ["Portal link created: admin"],
+      ["Portal link opened: admin"],
+    ]);
   });
 
   test("peek returns the token before expiry", () => {

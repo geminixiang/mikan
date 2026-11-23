@@ -40,6 +40,7 @@ import { isThreadSessionKey, threadSuffixOf } from "../../../sessions/session-ke
 const SESSION_VIEW_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
 export class InMemorySessionViewTokenStore extends InMemoryTokenStore<SessionViewToken> {
+  protected override readonly portal = "session view";
   create(options: SessionViewTokenCreateOptions): SessionViewToken {
     return this.createRecord(SESSION_VIEW_TOKEN_TTL_MS, {
       platform: options.platform,

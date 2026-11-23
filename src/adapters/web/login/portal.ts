@@ -25,6 +25,7 @@ import type { VaultManager } from "../../../vault/types.js";
 const TTL_MS = 15 * 60 * 1000;
 
 export class InMemoryLinkTokenStore extends InMemoryTokenStore<LinkToken> {
+  protected override readonly portal = "login";
   create(
     platform: PlatformName,
     platformUserId: string,

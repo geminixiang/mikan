@@ -31,6 +31,7 @@ import {
 const ADMIN_TOKEN_TTL_MS = 30 * 60 * 1000;
 
 export class InMemoryAdminTokenStore extends InMemoryTokenStore<AdminToken> {
+  protected override readonly portal = "admin";
   create(args: AdminTokenCreateOptions): AdminToken {
     this.deleteWhere(
       (token) => token.platform === args.platform && token.platformUserId === args.platformUserId,
